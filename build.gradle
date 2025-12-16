@@ -1,20 +1,52 @@
 plugins {
-    id 'java'
+    id 'java-library'
+    id 'io.freefair.lombok' version "9.1.0"
 }
 
-group = 'dev.bxlab.clipboard.monitor'
-version = '1.0-SNAPSHOT'
+group = 'dev.bxlab.clipboard'
+version = '1.0.0-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+    withJavadocJar()
+    withSourcesJar()
+}
 
 repositories {
     mavenCentral()
 }
 
 dependencies {
-    testImplementation platform('org.junit:junit-bom:5.10.0')
+    // Logging
+    api 'org.slf4j:slf4j-api:2.0.17'
+    runtimeOnly 'ch.qos.logback:logback-classic:1.5.22'
+
+    // Tests
+    testImplementation platform('org.junit:junit-bom:5.14.1')
     testImplementation 'org.junit.jupiter:junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testImplementation 'ch.qos.logback:logback-classic:1.5.22'
+    testImplementation 'org.assertj:assertj-core:3.27.3'
+    testImplementation 'org.awaitility:awaitility:4.3.0'
 }
 
 test {
     useJUnitPlatform()
+
+    testLogging {
+        events "passed", "skipped", "failed"
+    }
+}
+
+javadoc {
+    exclude '**/internal/**'
+
+    options {
+        encoding = 'UTF-8'
+        charSet = 'UTF-8'
+        addBooleanOption('Xdoclint:none', true)
+        quiet()
+    }
 }
