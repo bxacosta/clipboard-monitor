@@ -1,0 +1,51 @@
+plugins {
+    id 'java'
+}
+
+// Custom tasks for each example using lazy registration
+tasks.register('runBasicRead', JavaExec) {
+    group = 'examples'
+    description = 'Read current clipboard content'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'dev.bxlab.clipboard.examples.basic.BasicReadExample'
+}
+
+tasks.register('runBasicWrite', JavaExec) {
+    group = 'examples'
+    description = 'Write text to clipboard'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'dev.bxlab.clipboard.examples.basic.BasicWriteExample'
+    standardInput = System.in
+}
+
+tasks.register('runImageExample', JavaExec) {
+    group = 'examples'
+    description = 'Monitor clipboard for images'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'dev.bxlab.clipboard.examples.basic.ImageExample'
+    standardInput = System.in
+}
+
+tasks.register('runFileListExample', JavaExec) {
+    group = 'examples'
+    description = 'Monitor clipboard for files'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'dev.bxlab.clipboard.examples.basic.FileListExample'
+    standardInput = System.in
+}
+
+tasks.register('runStatsExample', JavaExec) {
+    group = 'examples'
+    description = 'Monitor and display statistics'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'dev.bxlab.clipboard.examples.basic.StatsExample'
+    standardInput = System.in
+}
+
+tasks.register('runListenerExample', JavaExec) {
+    group = 'examples'
+    description = 'Multiple listeners example'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'dev.bxlab.clipboard.examples.basic.ListenerExample'
+    standardInput = System.in
+}

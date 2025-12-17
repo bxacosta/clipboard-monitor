@@ -1,1 +1,4 @@
 rootProject.name = 'clipboard-monitor'
+
+include 'examples:interactive'
+include 'examples:basic'

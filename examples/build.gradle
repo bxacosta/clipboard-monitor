@@ -1,0 +1,23 @@
+// Common configuration for all examples submodules
+subprojects {
+    apply plugin: 'java'
+
+    java {
+        toolchain {
+            languageVersion = JavaLanguageVersion.of(17)
+        }
+    }
+
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        implementation rootProject
+    }
+
+    // Ensure examples are built after the main library
+    tasks.named('compileJava') {
+        dependsOn rootProject.tasks.named('jar')
+    }
+}

@@ -1,0 +1,11 @@
+plugins {
+    id 'application'
+}
+
+application {
+    mainClass = 'dev.bxlab.clipboard.examples.interactive.InteractiveDemo'
+}
+
+run {
+    standardInput = System.in
+}
