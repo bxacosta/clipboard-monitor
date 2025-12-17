@@ -144,39 +144,7 @@ Main class for monitoring clipboard changes.
 
 ### ClipboardContent
 
-Immutable representation of clipboard content. Created via builder with type-safe methods.
-
-#### Builder Usage
-
-```java
-// Text content
-ClipboardContent text = ClipboardContent.builder()
-    .textData("Hello World")
-    .hash(hashValue)
-    .size(11)
-    .build();
-
-// Image content
-ClipboardContent image = ClipboardContent.builder()
-    .imageData(bufferedImage)
-    .hash(hashValue)
-    .size(estimatedSize)
-    .build();
-
-// File list content
-ClipboardContent files = ClipboardContent.builder()
-    .fileListData(fileList)
-    .hash(hashValue)
-    .size(totalSize)
-    .build();
-
-// Unknown content
-ClipboardContent unknown = ClipboardContent.builder()
-    .unknownType()
-    .hash(hashValue)
-    .size(0)
-    .build();
-```
+Immutable representation of clipboard content received in listener callbacks.
 
 #### Methods
 
@@ -203,6 +171,25 @@ The library uses a hybrid detection approach:
 
 All public APIs are thread-safe. Listeners are invoked in a dedicated callback thread, ensuring that listener execution
 does not block clipboard monitoring.
+
+## Examples
+
+The project includes example applications in the `examples/` directory.
+
+```bash
+# Interactive demo
+./gradlew -q --console=plain :examples:interactive:run
+
+# Basic examples
+./gradlew -q --console=plain :examples:basic:runBasicRead
+./gradlew -q --console=plain :examples:basic:runBasicWrite
+./gradlew -q --console=plain :examples:basic:runImageExample
+./gradlew -q --console=plain :examples:basic:runFileListExample
+./gradlew -q --console=plain :examples:basic:runStatsExample
+./gradlew -q --console=plain :examples:basic:runListenerExample
+```
+
+For detailed documentation, see [examples/README.md](examples/README.md).
 
 ## License
 
