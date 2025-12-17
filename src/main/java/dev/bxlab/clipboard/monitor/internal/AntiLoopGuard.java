@@ -52,16 +52,16 @@ public final class AntiLoopGuard {
 
         log.debug("Marked hash as own: {}", LogUtils.truncateHash(hash));
 
-        ScheduledFuture<?> task = scheduler.schedule(() -> {
-            ownHashes.remove(hash);
-            expiryTasks.remove(hash);
-            log.debug("Removed own hash: {}", LogUtils.truncateHash(hash));
-        }, HASH_EXPIRY_SECONDS, TimeUnit.SECONDS);
-
-        ScheduledFuture<?> oldTask = expiryTasks.put(hash, task);
-        if (oldTask != null) {
-            oldTask.cancel(false);
-        }
+        expiryTasks.compute(hash, (k, oldTask) -> {
+            if (oldTask != null && !oldTask.isDone()) {
+                oldTask.cancel(false);
+            }
+            return scheduler.schedule(() -> {
+                ownHashes.remove(hash);
+                expiryTasks.remove(hash);
+                log.debug("Removed own hash: {}", LogUtils.truncateHash(hash));
+            }, HASH_EXPIRY_SECONDS, TimeUnit.SECONDS);
+        });
     }
 
     /**

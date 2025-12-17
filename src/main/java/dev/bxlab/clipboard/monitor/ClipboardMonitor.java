@@ -31,6 +31,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * System clipboard monitor.
@@ -77,7 +78,7 @@ public final class ClipboardMonitor implements AutoCloseable {
     private PollingDetector pollingDetector;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
-    private volatile String lastProcessedHash = "";
+    private final AtomicReference<String> lastProcessedHash = new AtomicReference<>("");
     private ScheduledFuture<?> debounceTask;
     private final Object debounceLock = new Object();
 
@@ -91,14 +92,14 @@ public final class ClipboardMonitor implements AutoCloseable {
 
         this.clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
         this.scheduler = Executors.newScheduledThreadPool(2, r -> {
-            Thread t = new Thread(r, "clipboard-monitor-scheduler");
-            t.setDaemon(true);
-            return t;
+            Thread thread = new Thread(r, "clipboard-monitor-scheduler");
+            thread.setDaemon(true);
+            return thread;
         });
         this.callbackExecutor = Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "clipboard-monitor-callback");
-            t.setDaemon(true);
-            return t;
+            Thread thread = new Thread(r, "clipboard-monitor-callback");
+            thread.setDaemon(true);
+            return thread;
         });
 
         this.contentReader = new ContentReader(clipboard);
@@ -124,7 +125,7 @@ public final class ClipboardMonitor implements AutoCloseable {
                 log.debug("Will notify initial clipboard content");
                 onClipboardChange(current);
             } else {
-                lastProcessedHash = initialHash;
+                lastProcessedHash.set(initialHash);
                 log.debug("Initial clipboard hash captured (will be ignored): {}",
                         LogUtils.truncateHash(initialHash));
             }
@@ -325,7 +326,7 @@ public final class ClipboardMonitor implements AutoCloseable {
             return;
         }
 
-        if (hash.equals(lastProcessedHash)) {
+        if (hash.equals(lastProcessedHash.get())) {
             log.debug("Ignoring duplicate content (same hash)");
             return;
         }
@@ -344,21 +345,32 @@ public final class ClipboardMonitor implements AutoCloseable {
             return;
         }
 
-        if (hash.equals(lastProcessedHash)) {
-            log.debug("Hash already processed after debounce, skipping");
-            return;
-        }
+        String previousHash;
+        do {
+            previousHash = lastProcessedHash.get();
+            if (hash.equals(previousHash)) {
+                log.debug("Hash already processed after debounce, skipping");
+                return;
+            }
+        } while (!lastProcessedHash.compareAndSet(previousHash, hash));
 
         try {
-            ClipboardContent content = contentReader.read();
+            ClipboardContent content = contentReader.read(hash);
 
-            lastProcessedHash = hash;
+            if (!content.getHash().equals(hash)) {
+                log.debug("Content changed during debounce (expected: {}, got: {}), will be detected on next cycle",
+                        LogUtils.truncateHash(hash), LogUtils.truncateHash(content.getHash()));
+                lastProcessedHash.compareAndSet(hash, previousHash);
+                return;
+            }
+
             statsCollector.recordChange();
 
             notifyListeners(content);
 
         } catch (ClipboardChangedException e) {
             log.debug("Clipboard changed during processing, will be detected on next cycle");
+            lastProcessedHash.compareAndSet(hash, previousHash);
         } catch (Exception e) {
             statsCollector.recordError();
             log.error("Error processing clipboard change", e);

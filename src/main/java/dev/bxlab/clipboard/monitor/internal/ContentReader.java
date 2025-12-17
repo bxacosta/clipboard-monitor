@@ -20,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Reads clipboard content and converts it to ClipboardContent.
@@ -49,6 +50,17 @@ public final class ContentReader {
      * @throws ClipboardException if clipboard cannot be read
      */
     public ClipboardContent read() {
+        return read(null);
+    }
+
+    /**
+     * Reads current clipboard content with a pre-calculated hash.
+     *
+     * @param precomputedHash optional pre-calculated hash (if null, hash will be calculated)
+     * @return clipboard content
+     * @throws ClipboardException if clipboard cannot be read
+     */
+    public ClipboardContent read(String precomputedHash) {
         Transferable transferable = getContentsWithRetry();
 
         if (transferable == null) {
@@ -60,15 +72,15 @@ public final class ContentReader {
 
         try {
             if (transferable.isDataFlavorSupported(DataFlavor.stringFlavor)) {
-                return readText(transferable, flavorList);
+                return readText(transferable, flavorList, precomputedHash);
             }
 
             if (transferable.isDataFlavorSupported(DataFlavor.imageFlavor)) {
-                return readImage(transferable, flavorList);
+                return readImage(transferable, flavorList, precomputedHash);
             }
 
             if (transferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
-                return readFileList(transferable, flavorList);
+                return readFileList(transferable, flavorList, precomputedHash);
             }
 
             return createUnknownContent(flavorList);
@@ -143,12 +155,12 @@ public final class ContentReader {
                 "Clipboard unavailable after " + MAX_RETRIES + " retries", lastException);
     }
 
-    private ClipboardContent readText(Transferable transferable, List<DataFlavor> flavors)
+    private ClipboardContent readText(Transferable transferable, List<DataFlavor> flavors, String precomputedHash)
             throws UnsupportedFlavorException, IOException {
 
         String text = (String) transferable.getTransferData(DataFlavor.stringFlavor);
         byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
-        String hash = HashUtils.sha256(bytes);
+        String hash = Optional.ofNullable(precomputedHash).orElse(HashUtils.sha256(bytes));
 
         return ClipboardContent.builder()
                 .textData(text)
@@ -160,14 +172,14 @@ public final class ContentReader {
                 .build();
     }
 
-    private ClipboardContent readImage(Transferable transferable, List<DataFlavor> flavors)
+    private ClipboardContent readImage(Transferable transferable, List<DataFlavor> flavors, String precomputedHash)
             throws UnsupportedFlavorException, IOException {
 
         Image img = (Image) transferable.getTransferData(DataFlavor.imageFlavor);
         BufferedImage buffered = ImageUtils.toBufferedImage(img);
 
         long estimatedSize = (long) buffered.getWidth() * buffered.getHeight() * 4;
-        String hash = HashUtils.hashImage(buffered);
+        String hash = Optional.ofNullable(precomputedHash).orElse(HashUtils.hashImage(buffered));
 
         return ClipboardContent.builder()
                 .imageData(buffered)
@@ -178,10 +190,10 @@ public final class ContentReader {
                 .build();
     }
 
-    private ClipboardContent readFileList(Transferable transferable, List<DataFlavor> flavors)
+    @SuppressWarnings("unchecked")
+    private ClipboardContent readFileList(Transferable transferable, List<DataFlavor> flavors, String precomputedHash)
             throws UnsupportedFlavorException, IOException {
 
-        @SuppressWarnings("unchecked")
         List<File> files = (List<File>) transferable.getTransferData(DataFlavor.javaFileListFlavor);
 
         long totalSize = 0;
@@ -194,7 +206,7 @@ public final class ContentReader {
             pathBuilder.append(file.getAbsolutePath()).append("\n");
         }
 
-        String hash = HashUtils.hashFileList(files);
+        String hash = Optional.ofNullable(precomputedHash).orElse(HashUtils.hashFileList(files));
         byte[] pathBytes = pathBuilder.toString().getBytes(StandardCharsets.UTF_8);
 
         return ClipboardContent.builder()
