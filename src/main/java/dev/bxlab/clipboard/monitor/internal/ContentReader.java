@@ -4,7 +4,6 @@ import dev.bxlab.clipboard.monitor.ClipboardContent;
 import dev.bxlab.clipboard.monitor.exception.ClipboardChangedException;
 import dev.bxlab.clipboard.monitor.exception.ClipboardException;
 import dev.bxlab.clipboard.monitor.exception.ClipboardUnavailableException;
-import dev.bxlab.clipboard.monitor.exception.ContentTooLargeException;
 import dev.bxlab.clipboard.monitor.util.HashUtils;
 import dev.bxlab.clipboard.monitor.util.ImageUtils;
 import lombok.extern.slf4j.Slf4j;
@@ -33,17 +32,14 @@ public final class ContentReader {
     private static final int INITIAL_RETRY_DELAY_MS = 50;
 
     private final Clipboard clipboard;
-    private final long maxContentSize;
 
     /**
-     * Creates a content reader with the specified clipboard and size limit.
+     * Creates a content reader with the specified clipboard.
      *
-     * @param clipboard      clipboard to read from
-     * @param maxContentSize maximum content size in bytes
+     * @param clipboard clipboard to read from
      */
-    public ContentReader(Clipboard clipboard, long maxContentSize) {
+    public ContentReader(Clipboard clipboard) {
         this.clipboard = clipboard;
-        this.maxContentSize = maxContentSize;
     }
 
     /**
@@ -133,7 +129,7 @@ public final class ContentReader {
 
                 if (i < MAX_RETRIES - 1) {
                     try {
-                        Thread.sleep(INITIAL_RETRY_DELAY_MS * (i + 1));
+                        Thread.sleep(INITIAL_RETRY_DELAY_MS * (i + 1L));
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         throw new ClipboardUnavailableException(
@@ -152,11 +148,6 @@ public final class ContentReader {
 
         String text = (String) transferable.getTransferData(DataFlavor.stringFlavor);
         byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
-
-        if (bytes.length > maxContentSize) {
-            throw new ContentTooLargeException(bytes.length, maxContentSize);
-        }
-
         String hash = HashUtils.sha256(bytes);
 
         return ClipboardContent.builder()
@@ -176,10 +167,6 @@ public final class ContentReader {
         BufferedImage buffered = ImageUtils.toBufferedImage(img);
 
         long estimatedSize = (long) buffered.getWidth() * buffered.getHeight() * 4;
-        if (estimatedSize > maxContentSize) {
-            throw new ContentTooLargeException(estimatedSize, maxContentSize);
-        }
-
         String hash = HashUtils.hashImage(buffered);
 
         return ClipboardContent.builder()
@@ -205,10 +192,6 @@ public final class ContentReader {
                 totalSize += file.length();
             }
             pathBuilder.append(file.getAbsolutePath()).append("\n");
-        }
-
-        if (totalSize > maxContentSize) {
-            throw new ContentTooLargeException(totalSize, maxContentSize);
         }
 
         String hash = HashUtils.hashFileList(files);

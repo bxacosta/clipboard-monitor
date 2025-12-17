@@ -9,7 +9,7 @@ modifications and supports text, images, and file lists.
 - Support for multiple content types: text, images, and file lists
 - Thread-safe implementation with configurable listeners
 - Anti-loop protection for bidirectional synchronization scenarios
-- Configurable polling intervals and content size limits
+- Configurable polling intervals and debounce settings
 - Comprehensive statistics and monitoring capabilities
 
 ## Requirements
@@ -42,16 +42,22 @@ dependencies {
 ### Basic Monitoring
 
 ```java
+// Using try-with-resources (recommended)
+try (ClipboardMonitor monitor = ClipboardMonitor.builder()
+        .listener(content -> System.out.println("Clipboard changed: " + content.getType()))
+        .build()) {
+    monitor.start();
+    // ... application logic
+}
+
+// Or manual lifecycle management
 ClipboardMonitor monitor = ClipboardMonitor.builder()
-    .listener(content -> {
-        System.out.println("Clipboard changed: " + content.getType());
-    })
+    .listener(content -> System.out.println("Clipboard changed: " + content.getType()))
     .build();
 
 monitor.start();
-
 // Later, when done
-monitor.stop();
+monitor.close();
 ```
 
 ### Processing Different Content Types
@@ -83,10 +89,10 @@ monitor.start();
 ClipboardMonitor monitor = ClipboardMonitor.builder()
     .listener(this::handleClipboardChange)
     .pollingInterval(Duration.ofMillis(500))
-    .maxContentSize(50_000_000)
-    .debounceMs(100)
+    .debounce(Duration.ofMillis(100))
     .ownershipEnabled(true)
     .notifyInitialContent(false)
+    .ignoreOwnChanges(true)
     .build();
 
 monitor.start();
@@ -118,24 +124,59 @@ Main class for monitoring clipboard changes.
 
 - `listener(ClipboardListener)` - Adds a listener for clipboard changes
 - `pollingInterval(Duration)` - Sets the polling interval (default: 500ms)
-- `maxContentSize(long)` - Sets maximum content size in bytes (default: 100MB)
-- `debounceMs(long)` - Sets debounce delay in milliseconds (default: 100ms)
+- `debounce(Duration)` - Sets debounce delay (default: 100ms)
 - `ownershipEnabled(boolean)` - Enables/disables ownership detection (default: true)
 - `notifyInitialContent(boolean)` - Notifies current clipboard content on start (default: false)
+- `ignoreOwnChanges(boolean)` - Ignores changes made via setContent() methods (default: true)
 
 #### Methods
 
 - `start()` - Starts monitoring clipboard changes
-- `stop()` - Stops monitoring and releases resources
+- `close()` - Stops monitoring and releases all resources (implements AutoCloseable)
 - `isRunning()` - Returns whether the monitor is currently active
 - `setContent(String)` - Sets text content in clipboard
 - `setContent(BufferedImage)` - Sets image content in clipboard
 - `setContent(List<File>)` - Sets file list content in clipboard
+- `getCurrentContent()` - Returns current clipboard content (Optional)
 - `getStats()` - Returns monitoring statistics
+- `addListener(ClipboardListener)` - Adds a listener dynamically
+- `removeListener(ClipboardListener)` - Removes a listener
 
 ### ClipboardContent
 
-Immutable representation of clipboard content.
+Immutable representation of clipboard content. Created via builder with type-safe methods.
+
+#### Builder Usage
+
+```java
+// Text content
+ClipboardContent text = ClipboardContent.builder()
+    .textData("Hello World")
+    .hash(hashValue)
+    .size(11)
+    .build();
+
+// Image content
+ClipboardContent image = ClipboardContent.builder()
+    .imageData(bufferedImage)
+    .hash(hashValue)
+    .size(estimatedSize)
+    .build();
+
+// File list content
+ClipboardContent files = ClipboardContent.builder()
+    .fileListData(fileList)
+    .hash(hashValue)
+    .size(totalSize)
+    .build();
+
+// Unknown content
+ClipboardContent unknown = ClipboardContent.builder()
+    .unknownType()
+    .hash(hashValue)
+    .size(0)
+    .build();
+```
 
 #### Methods
 
@@ -143,8 +184,10 @@ Immutable representation of clipboard content.
 - `asText()` - Returns content as text (Optional)
 - `asImage()` - Returns content as BufferedImage (Optional)
 - `asFileList()` - Returns content as file list (Optional)
+- `asBytes()` - Returns content as raw bytes
 - `getTimestamp()` - Returns capture timestamp
 - `getHash()` - Returns content hash for change detection
+- `getSize()` - Returns content size in bytes
 - `getFlavors()` - Returns available data flavors
 
 ## Architecture

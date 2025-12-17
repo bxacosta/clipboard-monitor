@@ -56,16 +56,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Slf4j
 public final class ClipboardMonitor implements AutoCloseable {
 
-    private static final long DEFAULT_MAX_CONTENT_SIZE = 100_000_000;
     private static final Duration DEFAULT_POLLING_INTERVAL = Duration.ofMillis(500);
-    private static final long DEFAULT_DEBOUNCE_MS = 100;
+    private static final Duration DEFAULT_DEBOUNCE = Duration.ofMillis(100);
 
     private final List<ClipboardListener> listeners;
-    private final long maxContentSize;
     private final Duration pollingInterval;
-    private final long debounceMs;
+    private final Duration debounce;
     private final boolean ownershipEnabled;
     private final boolean notifyInitialContent;
+    private final boolean ignoreOwnChanges;
 
     private final Clipboard clipboard;
     private final ScheduledExecutorService scheduler;
@@ -82,13 +81,13 @@ public final class ClipboardMonitor implements AutoCloseable {
     private ScheduledFuture<?> debounceTask;
     private final Object debounceLock = new Object();
 
-    private ClipboardMonitor(Builder builder) {
+    private ClipboardMonitor(ClipboardMonitorBuilder builder) {
         this.listeners = new CopyOnWriteArrayList<>(builder.listeners);
-        this.maxContentSize = builder.maxContentSize;
         this.pollingInterval = builder.pollingInterval;
-        this.debounceMs = builder.debounceMs;
+        this.debounce = builder.debounce;
         this.ownershipEnabled = builder.ownershipEnabled;
         this.notifyInitialContent = builder.notifyInitialContent;
+        this.ignoreOwnChanges = builder.ignoreOwnChanges;
 
         this.clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
         this.scheduler = Executors.newScheduledThreadPool(2, r -> {
@@ -102,8 +101,8 @@ public final class ClipboardMonitor implements AutoCloseable {
             return t;
         });
 
-        this.contentReader = new ContentReader(clipboard, maxContentSize);
-        this.antiLoopGuard = new AntiLoopGuard(scheduler);
+        this.contentReader = new ContentReader(clipboard);
+        this.antiLoopGuard = ignoreOwnChanges ? new AntiLoopGuard(scheduler) : null;
         this.statsCollector = new StatsCollector();
     }
 
@@ -147,16 +146,18 @@ public final class ClipboardMonitor implements AutoCloseable {
         );
         pollingDetector.start();
 
-        log.info("ClipboardMonitor started (ownership={}, polling={}ms)", ownershipEnabled, pollingInterval.toMillis());
+        log.info("ClipboardMonitor started (ownership={}, polling={}ms, ignoreOwnChanges={})",
+                ownershipEnabled, pollingInterval.toMillis(), ignoreOwnChanges);
     }
 
     /**
-     * Stops clipboard monitoring.
+     * Closes the monitor and releases all resources.
      * Safe to call multiple times.
      */
-    public void stop() {
+    @Override
+    public void close() {
         if (!running.compareAndSet(true, false)) {
-            log.debug("Monitor already stopped");
+            log.debug("Monitor already closed");
             return;
         }
 
@@ -174,15 +175,6 @@ public final class ClipboardMonitor implements AutoCloseable {
             }
         }
 
-        log.info("ClipboardMonitor stopped");
-    }
-
-    /**
-     * Closes the monitor and releases all resources.
-     */
-    @Override
-    public void close() {
-        stop();
         scheduler.shutdown();
         callbackExecutor.shutdown();
 
@@ -211,7 +203,8 @@ public final class ClipboardMonitor implements AutoCloseable {
 
     /**
      * Writes text to clipboard.
-     * Content is automatically marked as "own" to prevent bidirectional sync loops.
+     * If ignoreOwnChanges is enabled (default), content is automatically marked
+     * as "own" to prevent bidirectional sync loops.
      *
      * @param text text to write
      * @throws NullPointerException if text is null
@@ -228,7 +221,8 @@ public final class ClipboardMonitor implements AutoCloseable {
 
     /**
      * Writes an image to clipboard.
-     * Content is automatically marked as "own" to prevent bidirectional sync loops.
+     * If ignoreOwnChanges is enabled (default), content is automatically marked
+     * as "own" to prevent bidirectional sync loops.
      *
      * @param image image to write
      * @throws NullPointerException if image is null
@@ -245,7 +239,8 @@ public final class ClipboardMonitor implements AutoCloseable {
 
     /**
      * Writes a file list to clipboard.
-     * Content is automatically marked as "own" to prevent bidirectional sync loops.
+     * If ignoreOwnChanges is enabled (default), content is automatically marked
+     * as "own" to prevent bidirectional sync loops.
      *
      * @param files files to write
      * @throws NullPointerException if files is null
@@ -261,7 +256,9 @@ public final class ClipboardMonitor implements AutoCloseable {
     }
 
     private void setContentInternal(Transferable transferable, String hash) {
-        antiLoopGuard.markAsOwn(hash);
+        if (antiLoopGuard != null) {
+            antiLoopGuard.markAsOwn(hash);
+        }
         clipboard.setContents(transferable, null);
 
         if (pollingDetector != null) {
@@ -323,7 +320,7 @@ public final class ClipboardMonitor implements AutoCloseable {
 
         String hash = contentReader.calculateHash(transferable);
 
-        if (antiLoopGuard.isOwnContent(hash)) {
+        if (antiLoopGuard != null && antiLoopGuard.isOwnContent(hash)) {
             log.debug("Ignoring own content: {}", LogUtils.truncateHash(hash));
             return;
         }
@@ -338,9 +335,7 @@ public final class ClipboardMonitor implements AutoCloseable {
                 debounceTask.cancel(false);
             }
 
-            debounceTask = scheduler.schedule(() -> {
-                processChange(hash);
-            }, debounceMs, TimeUnit.MILLISECONDS);
+            debounceTask = scheduler.schedule(() -> processChange(hash), debounce.toMillis(), TimeUnit.MILLISECONDS);
         }
     }
 
@@ -405,22 +400,22 @@ public final class ClipboardMonitor implements AutoCloseable {
      *
      * @return new builder
      */
-    public static Builder builder() {
-        return new Builder();
+    public static ClipboardMonitorBuilder builder() {
+        return new ClipboardMonitorBuilder();
     }
 
     /**
      * Builder for ClipboardMonitor instances.
      */
-    public static final class Builder {
+    public static final class ClipboardMonitorBuilder {
         private final List<ClipboardListener> listeners = new ArrayList<>();
-        private long maxContentSize = DEFAULT_MAX_CONTENT_SIZE;
         private Duration pollingInterval = DEFAULT_POLLING_INTERVAL;
-        private long debounceMs = DEFAULT_DEBOUNCE_MS;
+        private Duration debounce = DEFAULT_DEBOUNCE;
         private boolean ownershipEnabled = true;
         private boolean notifyInitialContent = false;
+        private boolean ignoreOwnChanges = true;
 
-        private Builder() {
+        private ClipboardMonitorBuilder() {
         }
 
         /**
@@ -430,25 +425,9 @@ public final class ClipboardMonitor implements AutoCloseable {
          * @return this builder
          * @throws NullPointerException if listener is null
          */
-        public Builder listener(ClipboardListener listener) {
+        public ClipboardMonitorBuilder listener(ClipboardListener listener) {
             Objects.requireNonNull(listener, "listener cannot be null");
             this.listeners.add(listener);
-            return this;
-        }
-
-        /**
-         * Maximum content size to process (default: 100MB).
-         * Larger content throws ContentTooLargeException.
-         *
-         * @param maxContentSize maximum size in bytes
-         * @return this builder
-         * @throws IllegalArgumentException if maxContentSize is not positive
-         */
-        public Builder maxContentSize(long maxContentSize) {
-            if (maxContentSize <= 0) {
-                throw new IllegalArgumentException("maxContentSize must be positive");
-            }
-            this.maxContentSize = maxContentSize;
             return this;
         }
 
@@ -461,7 +440,7 @@ public final class ClipboardMonitor implements AutoCloseable {
          * @throws NullPointerException     if pollingInterval is null
          * @throws IllegalArgumentException if pollingInterval is not positive
          */
-        public Builder pollingInterval(Duration pollingInterval) {
+        public ClipboardMonitorBuilder pollingInterval(Duration pollingInterval) {
             Objects.requireNonNull(pollingInterval, "pollingInterval cannot be null");
             if (pollingInterval.isNegative() || pollingInterval.isZero()) {
                 throw new IllegalArgumentException("pollingInterval must be positive");
@@ -474,15 +453,17 @@ public final class ClipboardMonitor implements AutoCloseable {
          * Debounce time (default: 100ms).
          * Groups rapid consecutive changes into a single notification.
          *
-         * @param debounceMs time in milliseconds
+         * @param debounce debounce duration
          * @return this builder
-         * @throws IllegalArgumentException if debounceMs is negative
+         * @throws NullPointerException     if debounce is null
+         * @throws IllegalArgumentException if debounce is negative
          */
-        public Builder debounceMs(long debounceMs) {
-            if (debounceMs < 0) {
-                throw new IllegalArgumentException("debounceMs cannot be negative");
+        public ClipboardMonitorBuilder debounce(Duration debounce) {
+            Objects.requireNonNull(debounce, "debounce cannot be null");
+            if (debounce.isNegative()) {
+                throw new IllegalArgumentException("debounce cannot be negative");
             }
-            this.debounceMs = debounceMs;
+            this.debounce = debounce;
             return this;
         }
 
@@ -493,7 +474,7 @@ public final class ClipboardMonitor implements AutoCloseable {
          * @param enabled true to enable
          * @return this builder
          */
-        public Builder ownershipEnabled(boolean enabled) {
+        public ClipboardMonitorBuilder ownershipEnabled(boolean enabled) {
             this.ownershipEnabled = enabled;
             return this;
         }
@@ -507,8 +488,26 @@ public final class ClipboardMonitor implements AutoCloseable {
          * @param notify true to notify initial content
          * @return this builder
          */
-        public Builder notifyInitialContent(boolean notify) {
+        public ClipboardMonitorBuilder notifyInitialContent(boolean notify) {
             this.notifyInitialContent = notify;
+            return this;
+        }
+
+        /**
+         * Enables/disables ignoring own content changes (default: true).
+         * <p>
+         * When enabled, content written via {@code setContent()} methods will not
+         * trigger listener notifications, preventing infinite loops in bidirectional
+         * synchronization scenarios.
+         * <p>
+         * Disable this only if you need to receive notifications for all changes,
+         * including those made by this monitor.
+         *
+         * @param ignore true to ignore own changes (default), false to notify all changes
+         * @return this builder
+         */
+        public ClipboardMonitorBuilder ignoreOwnChanges(boolean ignore) {
+            this.ignoreOwnChanges = ignore;
             return this;
         }
 
