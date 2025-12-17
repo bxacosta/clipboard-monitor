@@ -1,8 +1,10 @@
-package dev.bxlab.clipboard.monitor.internal;
+package dev.bxlab.clipboard.monitor.internal.detector;
 
+import dev.bxlab.clipboard.monitor.internal.ContentReader;
+import dev.bxlab.clipboard.monitor.util.LogUtils;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-import java.awt.Toolkit;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.Transferable;
 import java.time.Duration;
@@ -17,7 +19,8 @@ import java.util.function.Consumer;
  * Used as fallback when OwnershipDetector fails.
  */
 @Slf4j
-public final class PollingDetector {
+@RequiredArgsConstructor
+public final class PollingDetector implements ChangeDetector {
 
     private final Clipboard clipboard;
     private final ScheduledExecutorService scheduler;
@@ -29,19 +32,8 @@ public final class PollingDetector {
     private volatile String lastHash = "";
     private ScheduledFuture<?> pollingTask;
 
-    public PollingDetector(
-            ScheduledExecutorService scheduler,
-            Consumer<Transferable> changeHandler,
-            ContentReader contentReader,
-            Duration pollingInterval) {
 
-        this.clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-        this.scheduler = scheduler;
-        this.changeHandler = changeHandler;
-        this.contentReader = contentReader;
-        this.pollingInterval = pollingInterval;
-    }
-
+    @Override
     public void start() {
         if (running) {
             log.debug("PollingDetector already running");
@@ -53,8 +45,7 @@ public final class PollingDetector {
         try {
             Transferable initial = clipboard.getContents(null);
             lastHash = contentReader.calculateHash(initial);
-            log.debug("Initial clipboard hash: {}...",
-                    lastHash.substring(0, Math.min(8, lastHash.length())));
+            log.debug("Initial clipboard hash: {}", LogUtils.truncateHash(lastHash));
         } catch (Exception e) {
             log.warn("Could not get initial clipboard hash: {}", e.getMessage());
             lastHash = "";
@@ -70,6 +61,7 @@ public final class PollingDetector {
         log.info("PollingDetector started with interval: {}ms", pollingInterval.toMillis());
     }
 
+    @Override
     public void stop() {
         running = false;
 
@@ -81,6 +73,7 @@ public final class PollingDetector {
         log.info("PollingDetector stopped");
     }
 
+    @Override
     public boolean isRunning() {
         return running;
     }
@@ -93,8 +86,7 @@ public final class PollingDetector {
      */
     public void updateLastHash(String hash) {
         this.lastHash = hash;
-        log.debug("Updated last known hash: {}...",
-                hash.substring(0, Math.min(8, hash.length())));
+        log.debug("Updated last known hash: {}", LogUtils.truncateHash(hash));
     }
 
     private void poll() {
@@ -107,9 +99,9 @@ public final class PollingDetector {
             String currentHash = contentReader.calculateHash(current);
 
             if (!currentHash.equals(lastHash)) {
-                log.debug("Clipboard change detected via polling. Old: {}..., New: {}...",
-                        lastHash.substring(0, Math.min(8, lastHash.length())),
-                        currentHash.substring(0, Math.min(8, currentHash.length())));
+                log.debug("Clipboard change detected via polling. Old: {}, New: {}",
+                        LogUtils.truncateHash(lastHash),
+                        LogUtils.truncateHash(currentHash));
 
                 lastHash = currentHash;
                 changeHandler.accept(current);

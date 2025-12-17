@@ -1,10 +1,13 @@
 package dev.bxlab.clipboard.monitor.internal;
 
+import dev.bxlab.clipboard.monitor.util.LogUtils;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -20,9 +23,15 @@ public final class AntiLoopGuard {
     private static final long HASH_EXPIRY_SECONDS = 5;
 
     private final Set<String> ownHashes = ConcurrentHashMap.newKeySet();
+    private final Map<String, ScheduledFuture<?>> expiryTasks = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scheduler;
-    private volatile long lastWriteTime = 0;
+    private volatile long lastWriteNanoTime = 0;
 
+    /**
+     * Creates a new anti-loop guard.
+     *
+     * @param scheduler scheduler for expiry tasks
+     */
     public AntiLoopGuard(ScheduledExecutorService scheduler) {
         this.scheduler = scheduler;
     }
@@ -39,14 +48,20 @@ public final class AntiLoopGuard {
         }
 
         ownHashes.add(hash);
-        lastWriteTime = System.currentTimeMillis();
+        lastWriteNanoTime = System.nanoTime();
 
-        log.debug("Marked hash as own: {}...", hash.substring(0, Math.min(8, hash.length())));
+        log.debug("Marked hash as own: {}", LogUtils.truncateHash(hash));
 
-        scheduler.schedule(() -> {
+        ScheduledFuture<?> task = scheduler.schedule(() -> {
             ownHashes.remove(hash);
-            log.debug("Removed own hash: {}...", hash.substring(0, Math.min(8, hash.length())));
+            expiryTasks.remove(hash);
+            log.debug("Removed own hash: {}", LogUtils.truncateHash(hash));
         }, HASH_EXPIRY_SECONDS, TimeUnit.SECONDS);
+
+        ScheduledFuture<?> oldTask = expiryTasks.put(hash, task);
+        if (oldTask != null) {
+            oldTask.cancel(false);
+        }
     }
 
     /**
@@ -61,26 +76,29 @@ public final class AntiLoopGuard {
             return false;
         }
 
-        long elapsed = System.currentTimeMillis() - lastWriteTime;
-        if (elapsed < TIME_WINDOW_MS) {
-            log.debug("Within time window ({}ms), assuming own content", elapsed);
+        long elapsedNanos = System.nanoTime() - lastWriteNanoTime;
+        long elapsedMs = TimeUnit.NANOSECONDS.toMillis(elapsedNanos);
+        if (elapsedMs < TIME_WINDOW_MS && elapsedMs >= 0) {
+            log.debug("Within time window ({}ms), assuming own content", elapsedMs);
             return true;
         }
 
         boolean isOwn = ownHashes.contains(hash);
         if (isOwn) {
-            log.debug("Hash found in own hashes: {}...", hash.substring(0, Math.min(8, hash.length())));
+            log.debug("Hash found in own hashes: {}", LogUtils.truncateHash(hash));
         }
 
         return isOwn;
     }
 
     /**
-     * Clears all marked hashes.
+     * Clears all marked hashes and cancels pending expiry tasks.
      */
     public void clear() {
         ownHashes.clear();
-        lastWriteTime = 0;
+        expiryTasks.values().forEach(task -> task.cancel(false));
+        expiryTasks.clear();
+        lastWriteNanoTime = 0;
         log.debug("Anti-loop guard cleared");
     }
 

@@ -1,8 +1,8 @@
-package dev.bxlab.clipboard.monitor.internal;
+package dev.bxlab.clipboard.monitor.internal.detector;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-import java.awt.Toolkit;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.ClipboardOwner;
 import java.awt.datatransfer.Transferable;
@@ -17,7 +17,8 @@ import java.util.function.Consumer;
  * Faster than polling but may fail on some systems.
  */
 @Slf4j
-public final class OwnershipDetector implements ClipboardOwner {
+@RequiredArgsConstructor
+public final class OwnershipDetector implements ChangeDetector, ClipboardOwner {
 
     private static final long PROCESS_DELAY_MS = 50;
 
@@ -27,12 +28,7 @@ public final class OwnershipDetector implements ClipboardOwner {
 
     private volatile boolean running = false;
 
-    public OwnershipDetector(ScheduledExecutorService scheduler, Consumer<Transferable> changeHandler) {
-        this.clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-        this.scheduler = scheduler;
-        this.changeHandler = changeHandler;
-    }
-
+    @Override
     public void start() {
         if (running) {
             log.debug("OwnershipDetector already running");
@@ -44,11 +40,13 @@ public final class OwnershipDetector implements ClipboardOwner {
         log.info("OwnershipDetector started");
     }
 
+    @Override
     public void stop() {
         running = false;
         log.info("OwnershipDetector stopped");
     }
 
+    @Override
     public boolean isRunning() {
         return running;
     }
@@ -81,22 +79,6 @@ public final class OwnershipDetector implements ClipboardOwner {
         }, PROCESS_DELAY_MS, TimeUnit.MILLISECONDS);
     }
 
-    private void takeOwnership() {
-        try {
-            Transferable current = clipboard.getContents(null);
-            if (current != null) {
-                clipboard.setContents(current, this);
-                log.debug("Took clipboard ownership");
-            } else {
-                log.debug("Clipboard is empty, cannot take ownership");
-            }
-        } catch (IllegalStateException e) {
-            log.warn("Could not take clipboard ownership: {}", e.getMessage());
-        } catch (Exception e) {
-            log.error("Error taking clipboard ownership", e);
-        }
-    }
-
     /**
      * Re-takes ownership after writing content.
      * Call after setContents() to continue monitoring.
@@ -113,6 +95,22 @@ public final class OwnershipDetector implements ClipboardOwner {
             log.debug("Re-took clipboard ownership after write");
         } catch (Exception e) {
             log.warn("Could not re-take clipboard ownership: {}", e.getMessage());
+        }
+    }
+
+    private void takeOwnership() {
+        try {
+            Transferable current = clipboard.getContents(null);
+            if (current != null) {
+                clipboard.setContents(current, this);
+                log.debug("Took clipboard ownership");
+            } else {
+                log.debug("Clipboard is empty, cannot take ownership");
+            }
+        } catch (IllegalStateException e) {
+            log.warn("Could not take clipboard ownership: {}", e.getMessage());
+        } catch (Exception e) {
+            log.error("Error taking clipboard ownership", e);
         }
     }
 }

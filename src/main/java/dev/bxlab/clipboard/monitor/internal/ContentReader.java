@@ -1,15 +1,15 @@
 package dev.bxlab.clipboard.monitor.internal;
 
 import dev.bxlab.clipboard.monitor.ClipboardContent;
-import dev.bxlab.clipboard.monitor.ClipboardException;
-import dev.bxlab.clipboard.monitor.ContentType;
+import dev.bxlab.clipboard.monitor.exception.ClipboardChangedException;
+import dev.bxlab.clipboard.monitor.exception.ClipboardException;
+import dev.bxlab.clipboard.monitor.exception.ClipboardUnavailableException;
+import dev.bxlab.clipboard.monitor.exception.ContentTooLargeException;
+import dev.bxlab.clipboard.monitor.util.HashUtils;
+import dev.bxlab.clipboard.monitor.util.ImageUtils;
 import lombok.extern.slf4j.Slf4j;
 
-import java.awt.Canvas;
-import java.awt.Graphics2D;
 import java.awt.Image;
-import java.awt.MediaTracker;
-import java.awt.Toolkit;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.Transferable;
@@ -18,11 +18,8 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Arrays;
-import java.util.HexFormat;
 import java.util.List;
 
 /**
@@ -38,11 +35,12 @@ public final class ContentReader {
     private final Clipboard clipboard;
     private final long maxContentSize;
 
-    public ContentReader(long maxContentSize) {
-        this.clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-        this.maxContentSize = maxContentSize;
-    }
-
+    /**
+     * Creates a content reader with the specified clipboard and size limit.
+     *
+     * @param clipboard      clipboard to read from
+     * @param maxContentSize maximum content size in bytes
+     */
     public ContentReader(Clipboard clipboard, long maxContentSize) {
         this.clipboard = clipboard;
         this.maxContentSize = maxContentSize;
@@ -80,8 +78,7 @@ public final class ContentReader {
             return createUnknownContent(flavorList);
 
         } catch (UnsupportedFlavorException e) {
-            throw new ClipboardException.ClipboardChangedException(
-                    "Clipboard changed during read", e);
+            throw new ClipboardChangedException("Clipboard changed during read", e);
         } catch (IOException e) {
             throw new ClipboardException("Error reading clipboard", e);
         }
@@ -95,32 +92,32 @@ public final class ContentReader {
      */
     public String calculateHash(Transferable transferable) {
         if (transferable == null) {
-            return hashBytes(new byte[0]);
+            return HashUtils.sha256(new byte[0]);
         }
 
         try {
             if (transferable.isDataFlavorSupported(DataFlavor.stringFlavor)) {
                 String text = (String) transferable.getTransferData(DataFlavor.stringFlavor);
-                return hashBytes(text.getBytes(StandardCharsets.UTF_8));
+                return HashUtils.sha256(text);
             }
 
             if (transferable.isDataFlavorSupported(DataFlavor.imageFlavor)) {
                 Image img = (Image) transferable.getTransferData(DataFlavor.imageFlavor);
-                return hashImage(img);
+                BufferedImage buffered = ImageUtils.toBufferedImage(img);
+                return HashUtils.hashImage(buffered);
             }
 
             if (transferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
                 @SuppressWarnings("unchecked")
                 List<File> files = (List<File>) transferable.getTransferData(DataFlavor.javaFileListFlavor);
-                return hashFileList(files);
+                return HashUtils.hashFileList(files);
             }
 
-            return hashBytes(Arrays.toString(transferable.getTransferDataFlavors())
-                    .getBytes(StandardCharsets.UTF_8));
+            return HashUtils.sha256(Arrays.toString(transferable.getTransferDataFlavors()));
 
         } catch (Exception e) {
             log.warn("Error calculating hash, using timestamp fallback", e);
-            return hashBytes(String.valueOf(System.nanoTime()).getBytes(StandardCharsets.UTF_8));
+            return HashUtils.sha256(String.valueOf(System.nanoTime()));
         }
     }
 
@@ -139,14 +136,14 @@ public final class ContentReader {
                         Thread.sleep(INITIAL_RETRY_DELAY_MS * (i + 1));
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
-                        throw new ClipboardException.ClipboardUnavailableException(
+                        throw new ClipboardUnavailableException(
                                 "Interrupted while waiting for clipboard", ie);
                     }
                 }
             }
         }
 
-        throw new ClipboardException.ClipboardUnavailableException(
+        throw new ClipboardUnavailableException(
                 "Clipboard unavailable after " + MAX_RETRIES + " retries", lastException);
     }
 
@@ -154,17 +151,15 @@ public final class ContentReader {
             throws UnsupportedFlavorException, IOException {
 
         String text = (String) transferable.getTransferData(DataFlavor.stringFlavor);
+        byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
 
-        long estimatedSize = text.length() * 2L;
-        if (estimatedSize > maxContentSize) {
-            throw new ClipboardException.ContentTooLargeException(estimatedSize, maxContentSize);
+        if (bytes.length > maxContentSize) {
+            throw new ContentTooLargeException(bytes.length, maxContentSize);
         }
 
-        byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
-        String hash = hashBytes(bytes);
+        String hash = HashUtils.sha256(bytes);
 
         return ClipboardContent.builder()
-                .type(ContentType.TEXT)
                 .textData(text)
                 .hash(hash)
                 .size(bytes.length)
@@ -178,17 +173,16 @@ public final class ContentReader {
             throws UnsupportedFlavorException, IOException {
 
         Image img = (Image) transferable.getTransferData(DataFlavor.imageFlavor);
-        BufferedImage buffered = toBufferedImage(img);
+        BufferedImage buffered = ImageUtils.toBufferedImage(img);
 
         long estimatedSize = (long) buffered.getWidth() * buffered.getHeight() * 4;
         if (estimatedSize > maxContentSize) {
-            throw new ClipboardException.ContentTooLargeException(estimatedSize, maxContentSize);
+            throw new ContentTooLargeException(estimatedSize, maxContentSize);
         }
 
-        String hash = hashImage(buffered);
+        String hash = HashUtils.hashImage(buffered);
 
         return ClipboardContent.builder()
-                .type(ContentType.IMAGE)
                 .imageData(buffered)
                 .hash(hash)
                 .size(estimatedSize)
@@ -214,14 +208,13 @@ public final class ContentReader {
         }
 
         if (totalSize > maxContentSize) {
-            throw new ClipboardException.ContentTooLargeException(totalSize, maxContentSize);
+            throw new ContentTooLargeException(totalSize, maxContentSize);
         }
 
-        String hash = hashFileList(files);
+        String hash = HashUtils.hashFileList(files);
         byte[] pathBytes = pathBuilder.toString().getBytes(StandardCharsets.UTF_8);
 
         return ClipboardContent.builder()
-                .type(ContentType.FILE_LIST)
                 .fileListData(files)
                 .hash(hash)
                 .size(totalSize)
@@ -233,8 +226,8 @@ public final class ContentReader {
 
     private ClipboardContent createEmptyContent() {
         return ClipboardContent.builder()
-                .type(ContentType.UNKNOWN)
-                .hash(hashBytes(new byte[0]))
+                .unknownType()
+                .hash(HashUtils.sha256(new byte[0]))
                 .size(0)
                 .timestamp(Instant.now())
                 .build();
@@ -245,111 +238,12 @@ public final class ContentReader {
         byte[] bytes = flavorInfo.getBytes(StandardCharsets.UTF_8);
 
         return ClipboardContent.builder()
-                .type(ContentType.UNKNOWN)
-                .hash(hashBytes(bytes))
+                .unknownType()
+                .hash(HashUtils.sha256(bytes))
                 .size(0)
                 .timestamp(Instant.now())
                 .flavors(flavors)
                 .rawBytes(bytes)
                 .build();
-    }
-
-    private BufferedImage toBufferedImage(Image img) {
-        if (img instanceof BufferedImage buffered) {
-            return buffered;
-        }
-
-        int width = img.getWidth(null);
-        int height = img.getHeight(null);
-
-        if (width <= 0 || height <= 0) {
-            MediaTracker tracker = new MediaTracker(new Canvas());
-            tracker.addImage(img, 0);
-            try {
-                tracker.waitForID(0, 5000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-
-            width = img.getWidth(null);
-            height = img.getHeight(null);
-
-            if (width <= 0 || height <= 0) {
-                throw new ClipboardException("Image dimensions not available");
-            }
-        }
-
-        BufferedImage buffered = new BufferedImage(
-                width,
-                height,
-                BufferedImage.TYPE_INT_ARGB
-        );
-
-        Graphics2D g = buffered.createGraphics();
-        try {
-            g.drawImage(img, 0, 0, null);
-        } finally {
-            g.dispose();
-        }
-
-        return buffered;
-    }
-
-    private String hashBytes(byte[] bytes) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(bytes);
-            return HexFormat.of().formatHex(hash);
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("SHA-256 not available", e);
-        }
-    }
-
-    private String hashImage(Image img) {
-        try {
-            BufferedImage buffered = (img instanceof BufferedImage b) ? b : toBufferedImage(img);
-
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-
-            digest.update(intToBytes(buffered.getWidth()));
-            digest.update(intToBytes(buffered.getHeight()));
-            digest.update(intToBytes(buffered.getType()));
-
-            int sampleSize = Math.min(1000, buffered.getWidth() * buffered.getHeight());
-            int step = Math.max(1, (buffered.getWidth() * buffered.getHeight()) / sampleSize);
-
-            for (int i = 0; i < buffered.getWidth() * buffered.getHeight(); i += step) {
-                int x = i % buffered.getWidth();
-                int y = i / buffered.getWidth();
-                digest.update(intToBytes(buffered.getRGB(x, y)));
-            }
-
-            return HexFormat.of().formatHex(digest.digest());
-
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("SHA-256 not available", e);
-        }
-    }
-
-    private String hashFileList(List<File> files) {
-        StringBuilder sb = new StringBuilder();
-        for (File file : files) {
-            sb.append(file.getAbsolutePath())
-                    .append("|")
-                    .append(file.lastModified())
-                    .append("|")
-                    .append(file.length())
-                    .append("\n");
-        }
-        return hashBytes(sb.toString().getBytes(StandardCharsets.UTF_8));
-    }
-
-    private byte[] intToBytes(int value) {
-        return new byte[]{
-                (byte) (value >> 24),
-                (byte) (value >> 16),
-                (byte) (value >> 8),
-                (byte) value
-        };
     }
 }

@@ -1,26 +1,26 @@
 package dev.bxlab.clipboard.monitor;
 
+import dev.bxlab.clipboard.monitor.exception.ClipboardChangedException;
 import dev.bxlab.clipboard.monitor.internal.AntiLoopGuard;
 import dev.bxlab.clipboard.monitor.internal.ContentReader;
-import dev.bxlab.clipboard.monitor.internal.OwnershipDetector;
-import dev.bxlab.clipboard.monitor.internal.PollingDetector;
 import dev.bxlab.clipboard.monitor.internal.Stats;
+import dev.bxlab.clipboard.monitor.internal.StatsCollector;
+import dev.bxlab.clipboard.monitor.internal.detector.OwnershipDetector;
+import dev.bxlab.clipboard.monitor.internal.detector.PollingDetector;
+import dev.bxlab.clipboard.monitor.transferable.FileListTransferable;
+import dev.bxlab.clipboard.monitor.transferable.ImageTransferable;
+import dev.bxlab.clipboard.monitor.util.HashUtils;
+import dev.bxlab.clipboard.monitor.util.LogUtils;
 import lombok.extern.slf4j.Slf4j;
 
 import java.awt.Toolkit;
 import java.awt.datatransfer.Clipboard;
-import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.StringSelection;
 import java.awt.datatransfer.Transferable;
-import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -30,6 +30,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * System clipboard monitor.
@@ -39,13 +40,12 @@ import java.util.concurrent.TimeUnit;
  * <p>
  * Basic usage:
  * <pre>{@code
- * ClipboardMonitor monitor = ClipboardMonitor.builder()
- *     .listener(content -> System.out.println("Change: " + content.getType()))
- *     .build();
- *
- * monitor.start();
- * // ... later
- * monitor.stop();
+ * try (ClipboardMonitor monitor = ClipboardMonitor.builder()
+ *         .listener(content -> System.out.println("Change: " + content.getType()))
+ *         .build()) {
+ *     monitor.start();
+ *     // ... application logic
+ * }
  * }</pre>
  * <p>
  * For bidirectional sync:
@@ -54,7 +54,7 @@ import java.util.concurrent.TimeUnit;
  * }</pre>
  */
 @Slf4j
-public final class ClipboardMonitor {
+public final class ClipboardMonitor implements AutoCloseable {
 
     private static final long DEFAULT_MAX_CONTENT_SIZE = 100_000_000;
     private static final Duration DEFAULT_POLLING_INTERVAL = Duration.ofMillis(500);
@@ -72,12 +72,12 @@ public final class ClipboardMonitor {
     private final ExecutorService callbackExecutor;
     private final ContentReader contentReader;
     private final AntiLoopGuard antiLoopGuard;
-    private final Stats stats;
+    private final StatsCollector statsCollector;
 
     private OwnershipDetector ownershipDetector;
     private PollingDetector pollingDetector;
 
-    private volatile boolean running = false;
+    private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile String lastProcessedHash = "";
     private ScheduledFuture<?> debounceTask;
     private final Object debounceLock = new Object();
@@ -102,9 +102,9 @@ public final class ClipboardMonitor {
             return t;
         });
 
-        this.contentReader = new ContentReader(maxContentSize);
+        this.contentReader = new ContentReader(clipboard, maxContentSize);
         this.antiLoopGuard = new AntiLoopGuard(scheduler);
-        this.stats = new Stats();
+        this.statsCollector = new StatsCollector();
     }
 
     /**
@@ -112,12 +112,10 @@ public final class ClipboardMonitor {
      * Safe to call multiple times (no-op if already running).
      */
     public void start() {
-        if (running) {
+        if (!running.compareAndSet(false, true)) {
             log.debug("Monitor already running");
             return;
         }
-
-        running = true;
 
         try {
             Transferable current = clipboard.getContents(null);
@@ -128,19 +126,20 @@ public final class ClipboardMonitor {
                 onClipboardChange(current);
             } else {
                 lastProcessedHash = initialHash;
-                log.debug("Initial clipboard hash captured (will be ignored): {}...",
-                        initialHash.substring(0, Math.min(8, initialHash.length())));
+                log.debug("Initial clipboard hash captured (will be ignored): {}",
+                        LogUtils.truncateHash(initialHash));
             }
         } catch (Exception e) {
             log.warn("Could not capture initial clipboard hash: {}", e.getMessage());
         }
 
         if (ownershipEnabled) {
-            ownershipDetector = new OwnershipDetector(scheduler, this::onClipboardChange);
+            ownershipDetector = new OwnershipDetector(clipboard, scheduler, this::onClipboardChange);
             ownershipDetector.start();
         }
 
         pollingDetector = new PollingDetector(
+                clipboard,
                 scheduler,
                 this::onClipboardChange,
                 contentReader,
@@ -148,8 +147,7 @@ public final class ClipboardMonitor {
         );
         pollingDetector.start();
 
-        log.info("ClipboardMonitor started (ownership={}, polling={}ms)",
-                ownershipEnabled, pollingInterval.toMillis());
+        log.info("ClipboardMonitor started (ownership={}, polling={}ms)", ownershipEnabled, pollingInterval.toMillis());
     }
 
     /**
@@ -157,12 +155,10 @@ public final class ClipboardMonitor {
      * Safe to call multiple times.
      */
     public void stop() {
-        if (!running) {
+        if (!running.compareAndSet(true, false)) {
             log.debug("Monitor already stopped");
             return;
         }
-
-        running = false;
 
         if (ownershipDetector != null) {
             ownershipDetector.stop();
@@ -184,6 +180,7 @@ public final class ClipboardMonitor {
     /**
      * Closes the monitor and releases all resources.
      */
+    @Override
     public void close() {
         stop();
         scheduler.shutdown();
@@ -209,7 +206,7 @@ public final class ClipboardMonitor {
      * @return true if monitor is running
      */
     public boolean isRunning() {
-        return running;
+        return running.get();
     }
 
     /**
@@ -217,24 +214,15 @@ public final class ClipboardMonitor {
      * Content is automatically marked as "own" to prevent bidirectional sync loops.
      *
      * @param text text to write
+     * @throws NullPointerException if text is null
      */
     public void setContent(String text) {
         Objects.requireNonNull(text, "text cannot be null");
 
         StringSelection selection = new StringSelection(text);
-        String hash = calculateHash(text.getBytes(StandardCharsets.UTF_8));
+        String hash = HashUtils.sha256(text);
 
-        antiLoopGuard.markAsOwn(hash);
-        clipboard.setContents(selection, null);
-
-        if (pollingDetector != null) {
-            pollingDetector.updateLastHash(hash);
-        }
-
-        if (ownershipDetector != null && ownershipEnabled) {
-            ownershipDetector.retakeOwnership(selection);
-        }
-
+        setContentInternal(selection, hash);
         log.debug("Set clipboard text content ({} chars)", text.length());
     }
 
@@ -243,24 +231,15 @@ public final class ClipboardMonitor {
      * Content is automatically marked as "own" to prevent bidirectional sync loops.
      *
      * @param image image to write
+     * @throws NullPointerException if image is null
      */
     public void setContent(BufferedImage image) {
         Objects.requireNonNull(image, "image cannot be null");
 
         ImageTransferable transferable = new ImageTransferable(image);
-        String hash = contentReader.calculateHash(transferable);
+        String hash = HashUtils.hashImage(image);
 
-        antiLoopGuard.markAsOwn(hash);
-        clipboard.setContents(transferable, null);
-
-        if (pollingDetector != null) {
-            pollingDetector.updateLastHash(hash);
-        }
-
-        if (ownershipDetector != null && ownershipEnabled) {
-            ownershipDetector.retakeOwnership(transferable);
-        }
-
+        setContentInternal(transferable, hash);
         log.debug("Set clipboard image content ({}x{})", image.getWidth(), image.getHeight());
     }
 
@@ -269,25 +248,28 @@ public final class ClipboardMonitor {
      * Content is automatically marked as "own" to prevent bidirectional sync loops.
      *
      * @param files files to write
+     * @throws NullPointerException if files is null
      */
     public void setContent(List<File> files) {
         Objects.requireNonNull(files, "files cannot be null");
 
         FileListTransferable transferable = new FileListTransferable(files);
-        String hash = contentReader.calculateHash(transferable);
+        String hash = HashUtils.hashFileList(files);
 
+        setContentInternal(transferable, hash);
+        log.debug("Set clipboard file list content ({} files)", files.size());
+    }
+
+    private void setContentInternal(Transferable transferable, String hash) {
         antiLoopGuard.markAsOwn(hash);
         clipboard.setContents(transferable, null);
 
         if (pollingDetector != null) {
             pollingDetector.updateLastHash(hash);
         }
-
-        if (ownershipDetector != null && ownershipEnabled) {
+        if (ownershipDetector != null) {
             ownershipDetector.retakeOwnership(transferable);
         }
-
-        log.debug("Set clipboard file list content ({} files)", files.size());
     }
 
     /**
@@ -305,16 +287,19 @@ public final class ClipboardMonitor {
     }
 
     /**
-     * @return monitor statistics
+     * Returns an immutable snapshot of monitor statistics.
+     *
+     * @return current statistics
      */
     public Stats getStats() {
-        return stats;
+        return statsCollector.snapshot();
     }
 
     /**
      * Adds a listener.
      *
      * @param listener listener to add
+     * @throws NullPointerException if listener is null
      */
     public void addListener(ClipboardListener listener) {
         Objects.requireNonNull(listener, "listener cannot be null");
@@ -332,14 +317,14 @@ public final class ClipboardMonitor {
     }
 
     private void onClipboardChange(Transferable transferable) {
-        if (!running) {
+        if (!running.get()) {
             return;
         }
 
         String hash = contentReader.calculateHash(transferable);
 
         if (antiLoopGuard.isOwnContent(hash)) {
-            log.debug("Ignoring own content: {}...", hash.substring(0, Math.min(8, hash.length())));
+            log.debug("Ignoring own content: {}", LogUtils.truncateHash(hash));
             return;
         }
 
@@ -360,7 +345,7 @@ public final class ClipboardMonitor {
     }
 
     private void processChange(String hash) {
-        if (!running) {
+        if (!running.get()) {
             return;
         }
 
@@ -373,14 +358,14 @@ public final class ClipboardMonitor {
             ClipboardContent content = contentReader.read();
 
             lastProcessedHash = hash;
-            stats.recordChange();
+            statsCollector.recordChange();
 
             notifyListeners(content);
 
-        } catch (ClipboardException.ClipboardChangedException e) {
+        } catch (ClipboardChangedException e) {
             log.debug("Clipboard changed during processing, will be detected on next cycle");
         } catch (Exception e) {
-            stats.recordError();
+            statsCollector.recordError();
             log.error("Error processing clipboard change", e);
             notifyError(e);
         }
@@ -415,16 +400,6 @@ public final class ClipboardMonitor {
         });
     }
 
-    private String calculateHash(byte[] bytes) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(bytes);
-            return HexFormat.of().formatHex(hash);
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("SHA-256 not available", e);
-        }
-    }
-
     /**
      * Creates a new builder.
      *
@@ -453,6 +428,7 @@ public final class ClipboardMonitor {
          *
          * @param listener listener to add
          * @return this builder
+         * @throws NullPointerException if listener is null
          */
         public Builder listener(ClipboardListener listener) {
             Objects.requireNonNull(listener, "listener cannot be null");
@@ -466,6 +442,7 @@ public final class ClipboardMonitor {
          *
          * @param maxContentSize maximum size in bytes
          * @return this builder
+         * @throws IllegalArgumentException if maxContentSize is not positive
          */
         public Builder maxContentSize(long maxContentSize) {
             if (maxContentSize <= 0) {
@@ -481,6 +458,8 @@ public final class ClipboardMonitor {
          *
          * @param pollingInterval interval between polls
          * @return this builder
+         * @throws NullPointerException     if pollingInterval is null
+         * @throws IllegalArgumentException if pollingInterval is not positive
          */
         public Builder pollingInterval(Duration pollingInterval) {
             Objects.requireNonNull(pollingInterval, "pollingInterval cannot be null");
@@ -497,6 +476,7 @@ public final class ClipboardMonitor {
          *
          * @param debounceMs time in milliseconds
          * @return this builder
+         * @throws IllegalArgumentException if debounceMs is negative
          */
         public Builder debounceMs(long debounceMs) {
             if (debounceMs < 0) {
@@ -543,58 +523,6 @@ public final class ClipboardMonitor {
                 throw new IllegalStateException("At least one listener is required");
             }
             return new ClipboardMonitor(this);
-        }
-    }
-
-    private static class ImageTransferable implements Transferable {
-        private final BufferedImage image;
-
-        ImageTransferable(BufferedImage image) {
-            this.image = image;
-        }
-
-        @Override
-        public DataFlavor[] getTransferDataFlavors() {
-            return new DataFlavor[]{DataFlavor.imageFlavor};
-        }
-
-        @Override
-        public boolean isDataFlavorSupported(DataFlavor flavor) {
-            return DataFlavor.imageFlavor.equals(flavor);
-        }
-
-        @Override
-        public Object getTransferData(DataFlavor flavor) throws UnsupportedFlavorException {
-            if (!isDataFlavorSupported(flavor)) {
-                throw new UnsupportedFlavorException(flavor);
-            }
-            return image;
-        }
-    }
-
-    private static class FileListTransferable implements Transferable {
-        private final List<File> files;
-
-        FileListTransferable(List<File> files) {
-            this.files = List.copyOf(files);
-        }
-
-        @Override
-        public DataFlavor[] getTransferDataFlavors() {
-            return new DataFlavor[]{DataFlavor.javaFileListFlavor};
-        }
-
-        @Override
-        public boolean isDataFlavorSupported(DataFlavor flavor) {
-            return DataFlavor.javaFileListFlavor.equals(flavor);
-        }
-
-        @Override
-        public Object getTransferData(DataFlavor flavor) throws UnsupportedFlavorException {
-            if (!isDataFlavorSupported(flavor)) {
-                throw new UnsupportedFlavorException(flavor);
-            }
-            return files;
         }
     }
 }
