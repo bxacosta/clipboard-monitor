@@ -441,10 +441,6 @@ public final class ClipboardMonitor implements AutoCloseable {
          * @throws IllegalArgumentException if pollingInterval is not positive
          */
         public ClipboardMonitorBuilder pollingInterval(Duration pollingInterval) {
-            Objects.requireNonNull(pollingInterval, "pollingInterval cannot be null");
-            if (pollingInterval.isNegative() || pollingInterval.isZero()) {
-                throw new IllegalArgumentException("pollingInterval must be positive");
-            }
             this.pollingInterval = pollingInterval;
             return this;
         }
@@ -459,10 +455,6 @@ public final class ClipboardMonitor implements AutoCloseable {
          * @throws IllegalArgumentException if debounce is negative
          */
         public ClipboardMonitorBuilder debounce(Duration debounce) {
-            Objects.requireNonNull(debounce, "debounce cannot be null");
-            if (debounce.isNegative()) {
-                throw new IllegalArgumentException("debounce cannot be negative");
-            }
             this.debounce = debounce;
             return this;
         }
@@ -520,6 +512,14 @@ public final class ClipboardMonitor implements AutoCloseable {
         public ClipboardMonitor build() {
             if (listeners.isEmpty()) {
                 throw new IllegalStateException("At least one listener is required");
+            }
+            Objects.requireNonNull(pollingInterval, "pollingInterval cannot be null");
+            if (pollingInterval.isNegative() || pollingInterval.isZero()) {
+                throw new IllegalArgumentException("pollingInterval must be positive");
+            }
+            Objects.requireNonNull(debounce, "debounce cannot be null");
+            if (debounce.isNegative()) {
+                throw new IllegalArgumentException("debounce cannot be negative");
             }
             return new ClipboardMonitor(this);
         }
