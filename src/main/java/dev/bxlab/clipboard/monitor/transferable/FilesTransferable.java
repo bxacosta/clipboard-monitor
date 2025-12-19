@@ -11,7 +11,7 @@ import java.util.Objects;
  * Transferable implementation for file lists.
  * Used to write file references to the system clipboard.
  */
-public final class FileListTransferable implements Transferable {
+public final class FilesTransferable implements Transferable {
 
     private final List<File> files;
 
@@ -19,10 +19,10 @@ public final class FileListTransferable implements Transferable {
      * Creates a new file list transferable.
      *
      * @param files files to transfer
-     * @throws NullPointerException     if files is null
+     * @throws NullPointerException     if files are null
      * @throws IllegalArgumentException if files contains null elements
      */
-    public FileListTransferable(List<File> files) {
+    public FilesTransferable(List<File> files) {
         Objects.requireNonNull(files, "files cannot be null");
         if (files.stream().anyMatch(Objects::isNull)) {
             throw new IllegalArgumentException("files cannot contain null elements");

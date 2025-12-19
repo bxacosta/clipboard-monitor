@@ -1,537 +1,561 @@
 package dev.bxlab.clipboard.monitor;
 
-import dev.bxlab.clipboard.monitor.exception.ClipboardChangedException;
-import dev.bxlab.clipboard.monitor.internal.AntiLoopGuard;
-import dev.bxlab.clipboard.monitor.internal.ContentReader;
-import dev.bxlab.clipboard.monitor.internal.Stats;
-import dev.bxlab.clipboard.monitor.internal.StatsCollector;
-import dev.bxlab.clipboard.monitor.internal.detector.OwnershipDetector;
-import dev.bxlab.clipboard.monitor.internal.detector.PollingDetector;
-import dev.bxlab.clipboard.monitor.transferable.FileListTransferable;
+import dev.bxlab.clipboard.monitor.detector.ChangeDetector;
+import dev.bxlab.clipboard.monitor.detector.OwnershipDetector;
+import dev.bxlab.clipboard.monitor.detector.PollingDetector;
+import dev.bxlab.clipboard.monitor.exception.ClipboardUnavailableException;
+import dev.bxlab.clipboard.monitor.internal.ClipboardAccessor;
+import dev.bxlab.clipboard.monitor.internal.OwnContentTracker;
+import dev.bxlab.clipboard.monitor.transferable.FilesTransferable;
 import dev.bxlab.clipboard.monitor.transferable.ImageTransferable;
 import dev.bxlab.clipboard.monitor.util.HashUtils;
-import dev.bxlab.clipboard.monitor.util.LogUtils;
+import dev.bxlab.clipboard.monitor.util.TextUtils;
 import lombok.extern.slf4j.Slf4j;
 
-import java.awt.Toolkit;
 import java.awt.datatransfer.Clipboard;
 import java.awt.datatransfer.StringSelection;
 import java.awt.datatransfer.Transferable;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 /**
- * System clipboard monitor.
+ * System clipboard monitor with real-time change detection.
  * <p>
- * Detects clipboard changes using a combination of ClipboardOwner (for fast detection)
- * and polling (as reliable fallback).
- * <p>
- * Basic usage:
+ * Detects clipboard changes using configurable detection strategies and notifies
+ * registered listeners. Supports multiple listeners with isolation - each listener
+ * runs in its own virtual thread, so a slow or failing listener doesn't affect others.
+ *
+ * <h2>Basic Usage</h2>
  * <pre>{@code
  * try (ClipboardMonitor monitor = ClipboardMonitor.builder()
- *         .listener(content -> System.out.println("Change: " + content.getType()))
+ *         .detector(PollingDetector.defaults())
+ *         .listener(content -> System.out.println("Change: " + content.type()))
  *         .build()) {
  *     monitor.start();
  *     // ... application logic
  * }
  * }</pre>
- * <p>
- * For bidirectional sync:
+ *
+ * <h2>Pattern Matching (Java 21)</h2>
  * <pre>{@code
- * monitor.setContent("text from remote");  // Auto-marked to prevent loop
+ * ClipboardMonitor monitor = ClipboardMonitor.builder()
+ *     .detector(PollingDetector.defaults())
+ *     .listener(content -> {
+ *         switch (content) {
+ *             case TextContent t -> System.out.println("Text: " + t.text());
+ *             case ImageContent i -> System.out.println("Image: " + i.width() + "x" + i.height());
+ *             case FilesContent f -> System.out.println("Files: " + f.files().size());
+ *             case UnknownContent _ -> System.out.println("Unknown");
+ *         }
+ *     })
+ *     .build();
  * }</pre>
+ *
+ * <h2>Bidirectional Sync</h2>
+ * <pre>{@code
+ * // Content written via write() is automatically tracked to prevent loops
+ * monitor.write("text from remote");
+ * }</pre>
+ *
+ * @see PollingDetector
+ * @see OwnershipDetector
+ * @see ClipboardContent
  */
 @Slf4j
 public final class ClipboardMonitor implements AutoCloseable {
 
-    private static final Duration DEFAULT_POLLING_INTERVAL = Duration.ofMillis(500);
-    private static final Duration DEFAULT_DEBOUNCE = Duration.ofMillis(100);
+    private static final Duration DEFAULT_DEBOUNCE = Duration.ofMillis(50);
 
+    private final ChangeDetector detector;
     private final List<ClipboardListener> listeners;
-    private final Duration pollingInterval;
     private final Duration debounce;
-    private final boolean ownershipEnabled;
-    private final boolean notifyInitialContent;
-    private final boolean ignoreOwnChanges;
+    private final boolean notifyOnStart;
 
     private final Clipboard clipboard;
-    private final ScheduledExecutorService scheduler;
-    private final ExecutorService callbackExecutor;
-    private final ContentReader contentReader;
-    private final AntiLoopGuard antiLoopGuard;
-    private final StatsCollector statsCollector;
-
-    private OwnershipDetector ownershipDetector;
-    private PollingDetector pollingDetector;
+    private final OwnContentTracker ownContentTracker;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
-    private final AtomicReference<String> lastProcessedHash = new AtomicReference<>("");
-    private ScheduledFuture<?> debounceTask;
+    private final AtomicBoolean closed = new AtomicBoolean(false);
+    private volatile Instant startTime;
+
+    // Dedicated lock object for synchronization (never use synchronized(this))
     private final Object debounceLock = new Object();
 
-    private ClipboardMonitor(ClipboardMonitorBuilder builder) {
+    // For debounce: pending hash pattern
+    private final AtomicReference<String> lastNotifiedHash = new AtomicReference<>("");
+    private volatile String pendingHash = null;
+    private volatile long pendingStartNanos = 0;
+
+    // Watch loop thread
+    private final AtomicReference<Thread> watchThread = new AtomicReference<>();
+
+    private ClipboardMonitor(Builder builder) {
+        this.detector = builder.detector;
         this.listeners = new CopyOnWriteArrayList<>(builder.listeners);
-        this.pollingInterval = builder.pollingInterval;
         this.debounce = builder.debounce;
-        this.ownershipEnabled = builder.ownershipEnabled;
-        this.notifyInitialContent = builder.notifyInitialContent;
-        this.ignoreOwnChanges = builder.ignoreOwnChanges;
+        this.notifyOnStart = builder.notifyOnStart;
 
-        this.clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-        this.scheduler = Executors.newScheduledThreadPool(2, r -> {
-            Thread thread = new Thread(r, "clipboard-monitor-scheduler");
-            thread.setDaemon(true);
-            return thread;
-        });
-        this.callbackExecutor = Executors.newSingleThreadExecutor(r -> {
-            Thread thread = new Thread(r, "clipboard-monitor-callback");
-            thread.setDaemon(true);
-            return thread;
-        });
+        this.clipboard = ClipboardAccessor.getClipboard();
+        this.ownContentTracker = OwnContentTracker.create();
 
-        this.contentReader = new ContentReader(clipboard);
-        this.antiLoopGuard = ignoreOwnChanges ? new AntiLoopGuard(scheduler) : null;
-        this.statsCollector = new StatsCollector();
+        // Initialize detector with our callback
+        initializeDetector();
+    }
+
+    private void initializeDetector() {
+        Consumer<String> callback = this::onHashChange;
+        if (detector instanceof PollingDetector pd) {
+            pd.initialize(callback);
+        } else if (detector instanceof OwnershipDetector od) {
+            od.initialize(callback);
+        }
+    }
+
+    /**
+     * Creates a new builder for configuring a ClipboardMonitor.
+     *
+     * @return new builder instance
+     */
+    public static Builder builder() {
+        return new Builder();
     }
 
     /**
      * Starts clipboard monitoring.
+     * <p>
      * Safe to call multiple times (no-op if already running).
+     *
+     * @throws IllegalStateException if the monitor has been closed
      */
     public void start() {
+        if (closed.get()) {
+            throw new IllegalStateException("Monitor has been closed");
+        }
+
         if (!running.compareAndSet(false, true)) {
             log.debug("Monitor already running");
             return;
         }
 
-        try {
-            Transferable current = clipboard.getContents(null);
-            String initialHash = contentReader.calculateHash(current);
+        startTime = Instant.now();
 
-            if (notifyInitialContent) {
-                log.debug("Will notify initial clipboard content");
-                onClipboardChange(current);
-            } else {
-                lastProcessedHash.set(initialHash);
-                log.debug("Initial clipboard hash captured (will be ignored): {}",
-                        LogUtils.truncateHash(initialHash));
+        // Capture the initial hash
+        try {
+            Transferable contents = ClipboardAccessor.getContents();
+            if (contents != null) {
+                String initialHash = ClipboardAccessor.calculateHash(contents);
+                lastNotifiedHash.set(initialHash);
+                log.debug("Initial clipboard hash: {}", TextUtils.truncate(initialHash));
+
+                if (notifyOnStart) {
+                    ClipboardContent content = readContent(initialHash);
+                    notifyListeners(content);
+                }
             }
         } catch (Exception e) {
-            log.warn("Could not capture initial clipboard hash: {}", e.getMessage());
+            log.warn("Could not capture initial clipboard state: {}", e.getMessage());
         }
 
-        if (ownershipEnabled) {
-            ownershipDetector = new OwnershipDetector(clipboard, scheduler, this::onClipboardChange);
-            ownershipDetector.start();
-        }
+        // Start detector
+        detector.start();
 
-        pollingDetector = new PollingDetector(
-                clipboard,
-                scheduler,
-                this::onClipboardChange,
-                contentReader,
-                pollingInterval
-        );
-        pollingDetector.start();
+        // Start a watch loop for debounce processing
+        Thread thread = Thread.ofVirtual()
+                .name("clipboard-watch-loop")
+                .start(this::watchLoop);
+        watchThread.set(thread);
 
-        log.info("ClipboardMonitor started (ownership={}, polling={}ms, ignoreOwnChanges={})",
-                ownershipEnabled, pollingInterval.toMillis(), ignoreOwnChanges);
+        log.info("ClipboardMonitor started with {} detector", detector.getClass().getSimpleName());
     }
 
     /**
      * Closes the monitor and releases all resources.
-     * Safe to call multiple times.
+     * <p>
+     * Safe to call multiple times. Idempotent.
      */
     @Override
     public void close() {
-        if (!running.compareAndSet(true, false)) {
-            log.debug("Monitor already closed");
+        if (!closed.compareAndSet(false, true)) {
             return;
         }
 
-        if (ownershipDetector != null) {
-            ownershipDetector.stop();
-        }
-        if (pollingDetector != null) {
-            pollingDetector.stop();
+        running.set(false);
+
+        // Stop detector
+        detector.stop();
+
+        // Stop watch thread
+        Thread thread = watchThread.get();
+        if (thread != null) {
+            thread.interrupt();
         }
 
-        synchronized (debounceLock) {
-            if (debounceTask != null) {
-                debounceTask.cancel(false);
-                debounceTask = null;
-            }
-        }
-
-        scheduler.shutdown();
-        callbackExecutor.shutdown();
-
-        try {
-            if (!scheduler.awaitTermination(1, TimeUnit.SECONDS)) {
-                scheduler.shutdownNow();
-            }
-            if (!callbackExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
-                callbackExecutor.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            scheduler.shutdownNow();
-            callbackExecutor.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
+        // Clear tracker
+        ownContentTracker.clear();
 
         log.info("ClipboardMonitor closed");
     }
 
     /**
-     * @return true if monitor is running
+     * Returns whether the monitor is currently running.
+     *
+     * @return true if running, false otherwise
      */
     public boolean isRunning() {
         return running.get();
     }
 
     /**
-     * Writes text to clipboard.
-     * If ignoreOwnChanges is enabled (default), content is automatically marked
-     * as "own" to prevent bidirectional sync loops.
+     * Writes text to the clipboard.
+     * <p>
+     * The content is automatically tracked to prevent notification loops
+     * in bidirectional sync scenarios.
      *
      * @param text text to write
      * @throws NullPointerException if text is null
      */
-    public void setContent(String text) {
+    public void write(String text) {
         Objects.requireNonNull(text, "text cannot be null");
 
-        StringSelection selection = new StringSelection(text);
         String hash = HashUtils.sha256(text);
+        ownContentTracker.markOwn(hash);
 
-        setContentInternal(selection, hash);
-        log.debug("Set clipboard text content ({} chars)", text.length());
+        StringSelection selection = new StringSelection(text);
+        clipboard.setContents(selection, null);
+
+        updateDetectorHash(hash, selection);
+        log.debug("Wrote text to clipboard ({} chars)", text.length());
     }
 
     /**
-     * Writes an image to clipboard.
-     * If ignoreOwnChanges is enabled (default), content is automatically marked
-     * as "own" to prevent bidirectional sync loops.
+     * Writes an image to the clipboard.
+     * <p>
+     * The content is automatically tracked to prevent notification loops
+     * in bidirectional sync scenarios.
      *
      * @param image image to write
-     * @throws NullPointerException if image is null
+     * @throws NullPointerException if the image is null
      */
-    public void setContent(BufferedImage image) {
+    public void write(BufferedImage image) {
         Objects.requireNonNull(image, "image cannot be null");
 
+        String hash = HashUtils.sha256(image);
+        ownContentTracker.markOwn(hash);
+
         ImageTransferable transferable = new ImageTransferable(image);
-        String hash = HashUtils.hashImage(image);
-
-        setContentInternal(transferable, hash);
-        log.debug("Set clipboard image content ({}x{})", image.getWidth(), image.getHeight());
-    }
-
-    /**
-     * Writes a file list to clipboard.
-     * If ignoreOwnChanges is enabled (default), content is automatically marked
-     * as "own" to prevent bidirectional sync loops.
-     *
-     * @param files files to write
-     * @throws NullPointerException if files is null
-     */
-    public void setContent(List<File> files) {
-        Objects.requireNonNull(files, "files cannot be null");
-
-        FileListTransferable transferable = new FileListTransferable(files);
-        String hash = HashUtils.hashFileList(files);
-
-        setContentInternal(transferable, hash);
-        log.debug("Set clipboard file list content ({} files)", files.size());
-    }
-
-    private void setContentInternal(Transferable transferable, String hash) {
-        if (antiLoopGuard != null) {
-            antiLoopGuard.markAsOwn(hash);
-        }
         clipboard.setContents(transferable, null);
 
-        if (pollingDetector != null) {
-            pollingDetector.updateLastHash(hash);
+        updateDetectorHash(hash, transferable);
+        log.debug("Wrote image to clipboard ({}x{})", image.getWidth(), image.getHeight());
+    }
+
+    /**
+     * Writes a file list to the clipboard.
+     * <p>
+     * The content is automatically tracked to prevent notification loops
+     * in bidirectional sync scenarios.
+     *
+     * @param files files to write
+     * @throws NullPointerException if files are null
+     */
+    public void write(List<File> files) {
+        Objects.requireNonNull(files, "files cannot be null");
+
+        String hash = HashUtils.sha256(files);
+        ownContentTracker.markOwn(hash);
+
+        FilesTransferable transferable = new FilesTransferable(files);
+        clipboard.setContents(transferable, null);
+
+        updateDetectorHash(hash, transferable);
+        log.debug("Wrote files to clipboard ({} files)", files.size());
+    }
+
+    private void updateDetectorHash(String hash, Transferable transferable) {
+        if (detector instanceof PollingDetector pd) {
+            pd.updateLastHash(hash);
+        } else if (detector instanceof OwnershipDetector od) {
+            od.retakeOwnership(transferable);
         }
-        if (ownershipDetector != null) {
-            ownershipDetector.retakeOwnership(transferable);
+        // Also update our last notified hash to prevent re-notification
+        lastNotifiedHash.set(hash);
+    }
+
+    /**
+     * Reads the current clipboard content.
+     *
+     * @return current clipboard content
+     * @throws ClipboardUnavailableException if the clipboard cannot be read
+     */
+    public ClipboardContent read() {
+        try {
+            Transferable contents = ClipboardAccessor.getContents();
+            if (contents == null) {
+                return new UnknownContent(HashUtils.sha256(new byte[0]), Instant.now());
+            }
+            String hash = ClipboardAccessor.calculateHash(contents);
+            return readContent(hash);
+        } catch (Exception e) {
+            throw new ClipboardUnavailableException("Failed to read clipboard", e);
         }
     }
 
     /**
-     * Reads current clipboard content without waiting for changes.
+     * Tries to read the current clipboard content.
      *
      * @return current content or empty if unavailable
      */
-    public Optional<ClipboardContent> getCurrentContent() {
+    public Optional<ClipboardContent> tryRead() {
         try {
-            return Optional.of(contentReader.read());
+            return Optional.of(read());
         } catch (Exception e) {
-            log.error("Error reading current clipboard content", e);
+            log.debug("Could not read clipboard: {}", e.getMessage());
             return Optional.empty();
         }
     }
 
     /**
-     * Returns an immutable snapshot of monitor statistics.
-     *
-     * @return current statistics
+     * Called by detector when a hash change is detected.
      */
-    public Stats getStats() {
-        return statsCollector.snapshot();
-    }
-
-    /**
-     * Adds a listener.
-     *
-     * @param listener listener to add
-     * @throws NullPointerException if listener is null
-     */
-    public void addListener(ClipboardListener listener) {
-        Objects.requireNonNull(listener, "listener cannot be null");
-        listeners.add(listener);
-    }
-
-    /**
-     * Removes a listener.
-     *
-     * @param listener listener to remove
-     * @return true if removed
-     */
-    public boolean removeListener(ClipboardListener listener) {
-        return listeners.remove(listener);
-    }
-
-    private void onClipboardChange(Transferable transferable) {
+    private void onHashChange(String newHash) {
         if (!running.get()) {
             return;
         }
 
-        String hash = contentReader.calculateHash(transferable);
-
-        if (antiLoopGuard != null && antiLoopGuard.isOwnContent(hash)) {
-            log.debug("Ignoring own content: {}", LogUtils.truncateHash(hash));
+        // Check if this is our own content
+        if (ownContentTracker.isOwn(newHash)) {
+            log.debug("Ignoring own content: {}", TextUtils.truncate(newHash));
             return;
         }
 
-        if (hash.equals(lastProcessedHash.get())) {
-            log.debug("Ignoring duplicate content (same hash)");
-            return;
-        }
-
+        // Update pending hash for debounce processing
         synchronized (debounceLock) {
-            if (debounceTask != null) {
-                debounceTask.cancel(false);
+            if (pendingHash == null || !pendingHash.equals(newHash)) {
+                pendingHash = newHash;
+                pendingStartNanos = System.nanoTime();
+                log.debug("New pending hash: {}", TextUtils.truncate(newHash));
             }
-
-            debounceTask = scheduler.schedule(() -> processChange(hash), debounce.toMillis(), TimeUnit.MILLISECONDS);
         }
     }
 
-    private void processChange(String hash) {
-        if (!running.get()) {
-            return;
+    /**
+     * Watch loop that processes pending changes with debounce.
+     */
+    @SuppressWarnings({"BusyWait", "java:S1181"}) // Intentional polling loop for debounce processing
+    private void watchLoop() {
+        long debounceNanos = debounce.toNanos();
+
+        while (running.get()) {
+            try {
+                String currentPending;
+                long pendingStart;
+
+                synchronized (debounceLock) {
+                    currentPending = pendingHash;
+                    pendingStart = pendingStartNanos;
+                }
+
+                if (currentPending != null && !currentPending.equals(lastNotifiedHash.get())) {
+                    long elapsed = System.nanoTime() - pendingStart;
+
+                    if (elapsed >= debounceNanos) {
+                        processPendingChange(currentPending);
+                    }
+                }
+
+                // Sleep a short interval before checking again
+                Thread.sleep(10);
+
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (Exception e) {
+                // Handle recoverable exceptions without dying
+                log.error("Error in watch loop", e);
+            } catch (Error e) {
+                // Log fatal errors but rethrow - these are unrecoverable
+                log.error("Fatal error in watch loop", e);
+                throw e;
+            }
         }
 
-        String previousHash;
-        do {
-            previousHash = lastProcessedHash.get();
-            if (hash.equals(previousHash)) {
-                log.debug("Hash already processed after debounce, skipping");
-                return;
-            }
-        } while (!lastProcessedHash.compareAndSet(previousHash, hash));
+        log.debug("Watch loop ended");
+    }
 
+    private void processPendingChange(String hash) {
         try {
-            ClipboardContent content = contentReader.read(hash);
+            // Read content
+            ClipboardContent content = readContent(hash);
 
-            if (!content.getHash().equals(hash)) {
-                log.debug("Content changed during debounce (expected: {}, got: {}), will be detected on next cycle",
-                        LogUtils.truncateHash(hash), LogUtils.truncateHash(content.getHash()));
-                lastProcessedHash.compareAndSet(hash, previousHash);
+            // Post-read verification: ensure content hasn't changed during read
+            if (!content.hash().equals(hash)) {
+                log.debug("Content changed during read (expected: {}, got: {}), will retry",
+                        TextUtils.truncate(hash), TextUtils.truncate(content.hash()));
+                synchronized (debounceLock) {
+                    pendingHash = null; // Reset to detect new change
+                }
                 return;
             }
 
-            statsCollector.recordChange();
+            // Successfully read stable content
+            lastNotifiedHash.set(hash);
+            synchronized (debounceLock) {
+                pendingHash = null;
+            }
 
             notifyListeners(content);
 
-        } catch (ClipboardChangedException e) {
-            log.debug("Clipboard changed during processing, will be detected on next cycle");
-            lastProcessedHash.compareAndSet(hash, previousHash);
         } catch (Exception e) {
-            statsCollector.recordError();
             log.error("Error processing clipboard change", e);
-            notifyError(e);
+            synchronized (debounceLock) {
+                pendingHash = null; // Reset on error
+            }
         }
+    }
+
+    private ClipboardContent readContent(String expectedHash) {
+        Instant now = Instant.now();
+
+        // Try to read text
+        String text = ClipboardAccessor.readText();
+        if (text != null) {
+            String hash = HashUtils.sha256(text);
+            return new TextContent(text, hash, now);
+        }
+
+        // Try to read image
+        BufferedImage image = ClipboardAccessor.readImage();
+        if (image != null) {
+            String hash = HashUtils.sha256(image);
+            return ImageContent.of(image, hash, now);
+        }
+
+        // Try to read files
+        List<File> files = ClipboardAccessor.readFiles();
+        if (!files.isEmpty()) {
+            String hash = HashUtils.sha256(files);
+            return FilesContent.of(files, hash, now);
+        }
+
+        // Unknown content
+        return new UnknownContent(expectedHash, now);
     }
 
     private void notifyListeners(ClipboardContent content) {
-        callbackExecutor.submit(() -> {
-            for (ClipboardListener listener : listeners) {
-                try {
-                    listener.onClipboardChange(content);
-                } catch (Exception e) {
-                    log.error("Error in clipboard listener", e);
-                    try {
-                        listener.onError(e);
-                    } catch (Exception e2) {
-                        log.error("Error in listener error handler", e2);
-                    }
-                }
-            }
-        });
-    }
-
-    private void notifyError(Exception error) {
-        callbackExecutor.submit(() -> {
-            for (ClipboardListener listener : listeners) {
-                try {
-                    listener.onError(error);
-                } catch (Exception e) {
-                    log.error("Error in listener error handler", e);
-                }
-            }
-        });
+        for (int i = 0; i < listeners.size(); i++) {
+            final ClipboardListener listener = listeners.get(i);
+            Thread.ofVirtual()
+                    .name("clipboard-listener-" + i)
+                    .start(() -> {
+                        try {
+                            listener.onClipboardChange(content);
+                        } catch (Exception e) {
+                            listener.onError(e);
+                        }
+                    });
+        }
     }
 
     /**
-     * Creates a new builder.
-     *
-     * @return new builder
+     * Builder for creating ClipboardMonitor instances.
      */
-    public static ClipboardMonitorBuilder builder() {
-        return new ClipboardMonitorBuilder();
-    }
-
-    /**
-     * Builder for ClipboardMonitor instances.
-     */
-    public static final class ClipboardMonitorBuilder {
+    public static final class Builder {
+        private ChangeDetector detector;
         private final List<ClipboardListener> listeners = new ArrayList<>();
-        private Duration pollingInterval = DEFAULT_POLLING_INTERVAL;
         private Duration debounce = DEFAULT_DEBOUNCE;
-        private boolean ownershipEnabled = true;
-        private boolean notifyInitialContent = false;
-        private boolean ignoreOwnChanges = true;
+        private boolean notifyOnStart = false;
 
-        private ClipboardMonitorBuilder() {
+        private Builder() {
         }
 
         /**
-         * Adds a listener to receive change notifications.
+         * Sets the change detection strategy.
+         * <p>
+         * This is required. Use either {@link PollingDetector} or {@link OwnershipDetector}.
+         *
+         * @param detector the detector to use
+         * @return this builder
+         * @throws NullPointerException if detector is null
+         * @see PollingDetector#defaults()
+         * @see OwnershipDetector#defaults()
+         */
+        public Builder detector(ChangeDetector detector) {
+            this.detector = Objects.requireNonNull(detector, "detector cannot be null");
+            return this;
+        }
+
+        /**
+         * Adds a listener to receive clipboard change notifications.
+         * <p>
+         * Multiple listeners can be added. Each listener runs in its own
+         * virtual thread for isolation.
          *
          * @param listener listener to add
          * @return this builder
-         * @throws NullPointerException if listener is null
+         * @throws NullPointerException if the listener is null
          */
-        public ClipboardMonitorBuilder listener(ClipboardListener listener) {
+        public Builder listener(ClipboardListener listener) {
             Objects.requireNonNull(listener, "listener cannot be null");
             this.listeners.add(listener);
             return this;
         }
 
         /**
-         * Polling interval (default: 500ms).
-         * Lower interval = lower latency but higher CPU usage.
-         *
-         * @param pollingInterval interval between polls
-         * @return this builder
-         * @throws NullPointerException     if pollingInterval is null
-         * @throws IllegalArgumentException if pollingInterval is not positive
-         */
-        public ClipboardMonitorBuilder pollingInterval(Duration pollingInterval) {
-            this.pollingInterval = pollingInterval;
-            return this;
-        }
-
-        /**
-         * Debounce time (default: 100ms).
+         * Sets the debounce duration.
+         * <p>
          * Groups rapid consecutive changes into a single notification.
+         * Default is 50ms.
          *
-         * @param debounce debounce duration
+         * @param debounce debounce duration (must be non-negative)
          * @return this builder
          * @throws NullPointerException     if debounce is null
          * @throws IllegalArgumentException if debounce is negative
          */
-        public ClipboardMonitorBuilder debounce(Duration debounce) {
+        public Builder debounce(Duration debounce) {
+            Objects.requireNonNull(debounce, "debounce cannot be null");
+            if (debounce.isNegative()) {
+                throw new IllegalArgumentException("debounce cannot be negative: " + debounce);
+            }
             this.debounce = debounce;
             return this;
         }
 
         /**
-         * Enables/disables ownership detector (default: true).
-         * Disable if it causes issues on your system.
-         *
-         * @param enabled true to enable
-         * @return this builder
-         */
-        public ClipboardMonitorBuilder ownershipEnabled(boolean enabled) {
-            this.ownershipEnabled = enabled;
-            return this;
-        }
-
-        /**
-         * Notifies initial clipboard content on start (default: false).
+         * Whether to notify the initial clipboard content when starting.
          * <p>
-         * If false (default), only NEW changes after start are notified.
-         * If true, current clipboard content is notified as first change.
+         * If false (default), only changes after start are notified.
+         * If true, the current clipboard content is notified immediately.
          *
          * @param notify true to notify initial content
          * @return this builder
          */
-        public ClipboardMonitorBuilder notifyInitialContent(boolean notify) {
-            this.notifyInitialContent = notify;
+        public Builder notifyOnStart(boolean notify) {
+            this.notifyOnStart = notify;
             return this;
         }
 
         /**
-         * Enables/disables ignoring own content changes (default: true).
-         * <p>
-         * When enabled, content written via {@code setContent()} methods will not
-         * trigger listener notifications, preventing infinite loops in bidirectional
-         * synchronization scenarios.
-         * <p>
-         * Disable this only if you need to receive notifications for all changes,
-         * including those made by this monitor.
-         *
-         * @param ignore true to ignore own changes (default), false to notify all changes
-         * @return this builder
-         */
-        public ClipboardMonitorBuilder ignoreOwnChanges(boolean ignore) {
-            this.ignoreOwnChanges = ignore;
-            return this;
-        }
-
-        /**
-         * Builds the ClipboardMonitor.
+         * Builds the ClipboardMonitor instance.
          *
          * @return new ClipboardMonitor instance
-         * @throws IllegalStateException if no listeners configured
+         * @throws IllegalStateException if the detector is not set or no listeners configured
          */
         public ClipboardMonitor build() {
+            if (detector == null) {
+                throw new IllegalStateException("detector is required - use detector(PollingDetector.defaults()) or detector(OwnershipDetector.defaults())");
+            }
             if (listeners.isEmpty()) {
                 throw new IllegalStateException("At least one listener is required");
-            }
-            Objects.requireNonNull(pollingInterval, "pollingInterval cannot be null");
-            if (pollingInterval.isNegative() || pollingInterval.isZero()) {
-                throw new IllegalArgumentException("pollingInterval must be positive");
-            }
-            Objects.requireNonNull(debounce, "debounce cannot be null");
-            if (debounce.isNegative()) {
-                throw new IllegalArgumentException("debounce cannot be negative");
             }
             return new ClipboardMonitor(this);
         }

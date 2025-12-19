@@ -17,7 +17,7 @@ public class ClipboardUnavailableException extends ClipboardException {
     }
 
     /**
-     * Creates a new clipboard unavailable exception with cause.
+     * Creates a new clipboard-unavailable exception with cause.
      *
      * @param message error description
      * @param cause   underlying cause

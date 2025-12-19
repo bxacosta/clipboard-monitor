@@ -18,7 +18,7 @@ public final class ImageTransferable implements Transferable {
      * Creates a new image transferable.
      *
      * @param image image to transfer
-     * @throws NullPointerException if image is null
+     * @throws NullPointerException if the image is null
      */
     public ImageTransferable(BufferedImage image) {
         this.image = Objects.requireNonNull(image, "image cannot be null");

@@ -17,8 +17,9 @@ import java.util.List;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public final class HashUtils {
 
-    private static final HexFormat HEX = HexFormat.of();
     private static final String ALGORITHM = "SHA-256";
+    private static final HexFormat HEX = HexFormat.of();
+    private static final int IMAGE_SAMPLE_SIZE = 1000;
 
     /**
      * Calculates SHA-256 hash of a byte array.
@@ -27,10 +28,11 @@ public final class HashUtils {
      * @return hexadecimal hash string
      */
     public static String sha256(byte[] data) {
-        if (data == null) {
-            data = new byte[0];
+        MessageDigest md = createDigest();
+        if (data != null) {
+            md.update(data);
         }
-        return HEX.formatHex(getDigest().digest(data));
+        return HEX.formatHex(md.digest());
     }
 
     /**
@@ -48,32 +50,37 @@ public final class HashUtils {
 
     /**
      * Calculates SHA-256 hash of an image based on dimensions and sampled pixels.
+     * <p>
+     * Uses sampling strategy to avoid hashing all pixels of large images.
+     * Samples up to 1000 pixels uniformly distributed across the image.
      *
      * @param image image to hash
      * @return hexadecimal hash string
      */
-    public static String hashImage(BufferedImage image) {
+    public static String sha256(BufferedImage image) {
         if (image == null) {
             return sha256(new byte[0]);
         }
 
-        MessageDigest digest = getDigest();
+        MessageDigest md = createDigest();
 
-        digest.update(intToBytes(image.getWidth()));
-        digest.update(intToBytes(image.getHeight()));
-        digest.update(intToBytes(image.getType()));
+        // Include dimensions and type in hash
+        md.update(intToBytes(image.getWidth()));
+        md.update(intToBytes(image.getHeight()));
+        md.update(intToBytes(image.getType()));
 
+        // Sample pixels uniformly
         int totalPixels = image.getWidth() * image.getHeight();
-        int sampleSize = Math.min(1000, totalPixels);
+        int sampleSize = Math.min(IMAGE_SAMPLE_SIZE, totalPixels);
         int step = Math.max(1, totalPixels / sampleSize);
 
         for (int i = 0; i < totalPixels; i += step) {
             int x = i % image.getWidth();
             int y = i / image.getWidth();
-            digest.update(intToBytes(image.getRGB(x, y)));
+            md.update(intToBytes(image.getRGB(x, y)));
         }
 
-        return HEX.formatHex(digest.digest());
+        return HEX.formatHex(md.digest());
     }
 
     /**
@@ -82,7 +89,7 @@ public final class HashUtils {
      * @param files files to hash
      * @return hexadecimal hash string
      */
-    public static String hashFileList(List<File> files) {
+    public static String sha256(List<File> files) {
         if (files == null || files.isEmpty()) {
             return sha256(new byte[0]);
         }
@@ -101,12 +108,11 @@ public final class HashUtils {
         return sha256(sb.toString());
     }
 
-    private static MessageDigest getDigest() {
+    private static MessageDigest createDigest() {
         try {
             return MessageDigest.getInstance(ALGORITHM);
         } catch (NoSuchAlgorithmException e) {
-            // SHA-256 is guaranteed to be available in all JVM implementations
-            throw new AssertionError("SHA-256 algorithm not available", e);
+            throw new AssertionError(ALGORITHM + " algorithm not available", e);
         }
     }
 

@@ -6,7 +6,7 @@ package dev.bxlab.clipboard.monitor;
 public enum ContentType {
 
     /**
-     * Any text type (plain, HTML, RTF). Specific flavor available in {@link ClipboardContent#getFlavors()}.
+     * Any text type (plain, HTML, RTF). Specific flavor available in content metadata.
      */
     TEXT,
 
@@ -18,10 +18,10 @@ public enum ContentType {
     /**
      * List of copied files. Returned as {@link java.util.List} of {@link java.io.File}.
      */
-    FILE_LIST,
+    FILES,
 
     /**
-     * Unknown or unsupported type. Raw content available via {@link ClipboardContent#asBytes()}.
+     * Unknown or unsupported type.
      */
     UNKNOWN
 }

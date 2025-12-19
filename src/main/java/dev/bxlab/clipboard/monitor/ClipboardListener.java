@@ -25,7 +25,7 @@ public interface ClipboardListener {
 
     /**
      * Called when an error occurs during monitoring.
-     * Default implementation does nothing. Override for custom error handling.
+     * The default implementation does nothing. Override for custom error handling.
      *
      * @param error exception that occurred
      */
