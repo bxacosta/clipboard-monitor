@@ -1,8 +1,14 @@
 package dev.bxlab.clipboard.monitor.internal;
 
+import dev.bxlab.clipboard.monitor.ClipboardContent;
+import dev.bxlab.clipboard.monitor.FilesContent;
+import dev.bxlab.clipboard.monitor.ImageContent;
+import dev.bxlab.clipboard.monitor.TextContent;
+import dev.bxlab.clipboard.monitor.UnknownContent;
 import dev.bxlab.clipboard.monitor.exception.ClipboardUnavailableException;
 import dev.bxlab.clipboard.monitor.util.HashUtils;
 import dev.bxlab.clipboard.monitor.util.ImageUtils;
+import dev.bxlab.clipboard.monitor.util.TextUtils;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -17,14 +23,13 @@ import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 
 /**
  * Provides static access to the system clipboard with automatic retry logic.
- * <p>
- * Handles clipboard busy states and provides methods for reading different
- * content types (text, image, files).
  */
 @Slf4j
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
@@ -60,108 +65,61 @@ public final class ClipboardAccessor {
     }
 
     /**
-     * Reads text from the clipboard if available.
+     * Reads the current clipboard content.
      *
-     * @return text content or null if not text
+     * @return clipboard content with hash already calculated
      */
-    public static String readText() {
+    public static ClipboardContent readContent() {
         Transferable transferable = getContents();
-        if (transferable == null) {
-            return null;
-        }
-
-        try {
-            if (transferable.isDataFlavorSupported(DataFlavor.stringFlavor)) {
-                return (String) transferable.getTransferData(DataFlavor.stringFlavor);
-            }
-        } catch (UnsupportedFlavorException | IOException e) {
-            log.debug("Could not read text from clipboard: {}", e.getMessage());
-        }
-
-        return null;
+        return readContent(transferable);
     }
 
     /**
-     * Reads image from the clipboard if available.
+     * Reads clipboard content from a given Transferable.
      *
-     * @return image content or null if not image
+     * @param transferable the transferable to read from
+     * @return clipboard content with hash already calculated
      */
-    public static BufferedImage readImage() {
-        Transferable transferable = getContents();
+    public static ClipboardContent readContent(Transferable transferable) {
+        Instant now = Instant.now();
+
         if (transferable == null) {
-            return null;
-        }
-
-        try {
-            if (transferable.isDataFlavorSupported(DataFlavor.imageFlavor)) {
-                Image img = (Image) transferable.getTransferData(DataFlavor.imageFlavor);
-                return ImageUtils.toBufferedImage(img);
-            }
-        } catch (UnsupportedFlavorException | IOException e) {
-            log.debug("Could not read image from clipboard: {}", e.getMessage());
-        }
-
-        return null;
-    }
-
-    /**
-     * Reads a file list from the clipboard if available.
-     *
-     * @return file list or null if not a file list
-     */
-    @SuppressWarnings("unchecked")
-    public static List<File> readFiles() {
-        Transferable transferable = getContents();
-        if (transferable == null) {
-            return List.of();
-        }
-
-        try {
-            if (transferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
-                return (List<File>) transferable.getTransferData(DataFlavor.javaFileListFlavor);
-            }
-        } catch (UnsupportedFlavorException | IOException e) {
-            log.debug("Could not read files from clipboard: {}", e.getMessage());
-        }
-
-        return List.of();
-    }
-
-    /**
-     * Calculates hash of a transferable.
-     *
-     * @param transferable content to hash
-     * @return hash string
-     */
-    public static String calculateHash(Transferable transferable) {
-        if (transferable == null) {
-            return HashUtils.sha256(new byte[0]);
+            return new UnknownContent(HashUtils.sha256(new byte[0]), now);
         }
 
         try {
             if (transferable.isDataFlavorSupported(DataFlavor.stringFlavor)) {
                 String text = (String) transferable.getTransferData(DataFlavor.stringFlavor);
-                return HashUtils.sha256(text);
+                byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+                String hash = HashUtils.sha256(bytes);
+                log.debug("Read text content ({} chars, {} bytes), hash: {}", text.length(), bytes.length, TextUtils.truncate(hash));
+                return new TextContent(text, hash, now, bytes.length);
             }
 
             if (transferable.isDataFlavorSupported(DataFlavor.imageFlavor)) {
                 Image img = (Image) transferable.getTransferData(DataFlavor.imageFlavor);
                 BufferedImage buffered = ImageUtils.toBufferedImage(img);
-                return HashUtils.sha256(buffered);
+                String hash = HashUtils.sha256(buffered);
+                log.debug("Read image content ({}x{}), hash: {}", buffered.getWidth(), buffered.getHeight(), TextUtils.truncate(hash));
+                return ImageContent.of(buffered, hash, now);
             }
 
             if (transferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
                 @SuppressWarnings("unchecked")
                 List<File> files = (List<File>) transferable.getTransferData(DataFlavor.javaFileListFlavor);
-                return HashUtils.sha256(files);
+                String hash = HashUtils.sha256(files);
+                log.debug("Read files content ({} files), hash: {}", files.size(), TextUtils.truncate(hash));
+                return FilesContent.of(files, hash, now);
             }
 
-            // Unknown type - hash the flavor descriptions
-            return HashUtils.sha256(Arrays.toString(transferable.getTransferDataFlavors()));
+            String hash = HashUtils.sha256(Arrays.toString(transferable.getTransferDataFlavors()));
+            log.debug("Read unknown content type, hash: {}", TextUtils.truncate(hash));
+            return new UnknownContent(hash, now);
 
-        } catch (Exception e) {
-            log.warn("Error calculating hash, using timestamp fallback", e);
-            return HashUtils.sha256(String.valueOf(System.nanoTime()));
+        } catch (UnsupportedFlavorException | IOException e) {
+            log.warn("Error reading clipboard content: {}", e.getMessage());
+            String hash = HashUtils.sha256(String.valueOf(System.nanoTime()));
+            return new UnknownContent(hash, now);
         }
     }
 
@@ -187,7 +145,6 @@ public final class ClipboardAccessor {
             }
         }
 
-        throw new ClipboardUnavailableException(
-                "Clipboard unavailable after " + MAX_RETRIES + " retries", lastException);
+        throw new ClipboardUnavailableException("Clipboard unavailable after " + MAX_RETRIES + " retries", lastException);
     }
 }

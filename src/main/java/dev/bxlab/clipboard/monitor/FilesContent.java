@@ -9,9 +9,6 @@ import java.util.Objects;
 
 /**
  * File list content from the clipboard.
- * <p>
- * Represents a list of files that were copied to the clipboard.
- * The file list is immutable (defensive copy is made).
  *
  * <pre>{@code
  * FilesContent content = new FilesContent(files, hash, Instant.now(), totalSize);
@@ -33,8 +30,6 @@ public record FilesContent(
 
     /**
      * Creates a new FilesContent instance.
-     * <p>
-     * Makes a defensive copy of the files list.
      *
      * @throws NullPointerException     if files, hash, or timestamp is null
      * @throws IllegalArgumentException if totalSize is negative
@@ -46,7 +41,6 @@ public record FilesContent(
         if (totalSize < 0) {
             throw new IllegalArgumentException("totalSize cannot be negative: " + totalSize);
         }
-        // Defensive copy
         files = List.copyOf(files);
     }
 

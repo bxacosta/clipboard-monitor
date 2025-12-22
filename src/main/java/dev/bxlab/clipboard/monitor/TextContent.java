@@ -2,18 +2,14 @@ package dev.bxlab.clipboard.monitor;
 
 import dev.bxlab.clipboard.monitor.util.TextUtils;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Objects;
 
 /**
  * Text content from the clipboard.
- * <p>
- * Represents plain text, HTML, RTF, or any other text-based content.
- * The actual text is stored as a String.
  *
  * <pre>{@code
- * TextContent content = new TextContent("Hello World", hash, Instant.now());
+ * TextContent content = new TextContent("Hello World", hash, Instant.now(), 11);
  * System.out.println("Text: " + content.text());
  * System.out.println("Length: " + content.size() + " bytes");
  * }</pre>
@@ -21,22 +17,28 @@ import java.util.Objects;
  * @param text      the text content (never null)
  * @param hash      SHA-256 hash of the content
  * @param timestamp when the content was captured
+ * @param sizeBytes size of the text in UTF-8 bytes
  */
 public record TextContent(
         String text,
         String hash,
-        Instant timestamp
+        Instant timestamp,
+        long sizeBytes
 ) implements ClipboardContent {
 
     /**
      * Creates a new TextContent instance.
      *
-     * @throws NullPointerException if any parameter is null
+     * @throws NullPointerException     if any parameter is null
+     * @throws IllegalArgumentException if sizeBytes is negative
      */
     public TextContent {
         Objects.requireNonNull(text, "text cannot be null");
         Objects.requireNonNull(hash, "hash cannot be null");
         Objects.requireNonNull(timestamp, "timestamp cannot be null");
+        if (sizeBytes < 0) {
+            throw new IllegalArgumentException("sizeBytes cannot be negative: " + sizeBytes);
+        }
     }
 
     @Override
@@ -46,7 +48,7 @@ public record TextContent(
 
     @Override
     public long size() {
-        return text.getBytes(StandardCharsets.UTF_8).length;
+        return sizeBytes;
     }
 
     @Override
@@ -55,7 +57,7 @@ public record TextContent(
                 "text='" + TextUtils.truncate(text, 50) + "'" +
                 ", hash='" + TextUtils.truncate(hash) + "'" +
                 ", timestamp=" + timestamp +
-                ", size=" + size() +
+                ", size=" + sizeBytes +
                 '}';
     }
 }

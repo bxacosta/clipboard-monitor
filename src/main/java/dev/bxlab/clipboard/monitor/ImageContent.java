@@ -8,9 +8,6 @@ import java.util.Objects;
 
 /**
  * Image content from the clipboard.
- * <p>
- * Represents any image format (PNG, JPEG, BMP, etc.) as a {@link BufferedImage}.
- * Includes image dimensions for convenience.
  *
  * <pre>{@code
  * ImageContent content = new ImageContent(image, hash, Instant.now(), 800, 600);
@@ -71,7 +68,6 @@ public record ImageContent(
 
     @Override
     public long size() {
-        // Approximate size: width * height * 4 bytes (ARGB)
         return (long) width * height * 4;
     }
 
