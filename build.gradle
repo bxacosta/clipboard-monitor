@@ -1,14 +1,15 @@
 plugins {
     id 'java-library'
+    id 'maven-publish'
     id 'io.freefair.lombok' version "9.1.0"
 }
 
 group = 'dev.bxlab.clipboard'
-version = '1.0.0-SNAPSHOT'
+version = project.findProperty('version') ?: '1.0.0'
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
+        languageVersion = JavaLanguageVersion.of(21)
     }
     withJavadocJar()
     withSourcesJar()
@@ -46,5 +47,57 @@ javadoc {
         encoding = 'UTF-8'
         docEncoding = 'UTF-8'
         addStringOption('Xdoclint:none', '-quiet')
+    }
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+
+            groupId = 'dev.bxlab.clipboard'
+            artifactId = 'clipboard-monitor'
+
+            pom {
+                name = 'Clipboard Monitor'
+                description = 'Java library for monitoring system clipboard changes in real-time'
+                url = 'https://github.com/bxacosta/clipboard-monitor'
+
+                licenses {
+                    license {
+                        name = 'MIT License'
+                        url = 'https://opensource.org/licenses/MIT'
+                    }
+                }
+
+                developers {
+                    developer {
+                        id = 'bxacosta'
+                        name = 'Bryan Acosta'
+                        email = 'hello@bxlab.dev'
+                    }
+                }
+
+                scm {
+                    url = 'https://github.com/bxacosta/clipboard-monitor'
+                    connection = 'scm:git:https://github.com/bxacosta/clipboard-monitor.git'
+                    developerConnection = 'scm:git:ssh://git@github.com/bxacosta/clipboard-monitor.git'
+                }
+            }
+        }
+    }
+
+    repositories {
+        maven {
+            name = 'GitLab'
+            url = uri('https://gitlab.com/api/v4/projects/70108742/packages/maven')
+            credentials(HttpHeaderCredentials) {
+                name = 'Deploy-Token'
+                value = System.getenv('GITLAB_DEPLOY_TOKEN') ?: project.findProperty('gitlabDeployToken')
+            }
+            authentication {
+                header(HttpHeaderAuthentication)
+            }
+        }
     }
 }
