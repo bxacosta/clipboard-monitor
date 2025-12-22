@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * File list content from the clipboard.
+ * A list of files from the clipboard.
  *
  * <pre>{@code
  * FilesContent content = new FilesContent(files, hash, Instant.now(), totalSize);
@@ -19,7 +19,7 @@ import java.util.Objects;
  * @param files     the list of files (never null, immutable copy)
  * @param hash      SHA-256 hash of the content
  * @param timestamp when the content was captured
- * @param totalSize total size of all files in bytes
+ * @param totalSize the total size of all files in bytes
  */
 public record FilesContent(
         List<File> files,
