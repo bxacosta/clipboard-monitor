@@ -28,6 +28,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
       - name: Set up JDK ${{ env.JAVA_VERSION }}-${{ env.JAVA_DISTRIBUTION }}
         uses: actions/setup-java@v4
         with:
