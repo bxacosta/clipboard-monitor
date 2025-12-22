@@ -54,8 +54,13 @@ jobs:
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
           echo "Release version: $VERSION"
 
+      - name: Setup Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+
       - name: Build project
-        run: ./gradlew build -Pversion=${{ steps.version.outputs.VERSION }}
+        run: xvfb-run -a ./gradlew build -Pversion=${{ steps.version.outputs.VERSION }}
 
       - name: Publish package
         run: ./gradlew publish -Pversion=${{ steps.version.outputs.VERSION }}
