@@ -13,7 +13,6 @@ Full-featured interactive console application for testing and demonstrating the 
 - Real-time clipboard change notifications
 - Copy text, images, or files to the clipboard
 - Read current clipboard content
-- View monitoring statistics
 
 ## Commands
 
@@ -23,7 +22,6 @@ Full-featured interactive console application for testing and demonstrating the 
 | `2`     | Copy image to clipboard (from file path) |
 | `3`     | Copy file(s) to clipboard                |
 | `4`     | Read current clipboard content           |
-| `5`     | Show statistics                          |
 | `h`     | Show help                                |
 | `q`     | Quit                                     |
 

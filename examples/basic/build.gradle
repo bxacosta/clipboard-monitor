@@ -34,14 +34,6 @@ tasks.register('runFileListExample', JavaExec) {
     standardInput = System.in
 }
 
-tasks.register('runStatsExample', JavaExec) {
-    group = 'examples'
-    description = 'Monitor and display statistics'
-    classpath = sourceSets.main.runtimeClasspath
-    mainClass = 'dev.bxlab.clipboard.examples.basic.StatsExample'
-    standardInput = System.in
-}
-
 tasks.register('runListenerExample', JavaExec) {
     group = 'examples'
     description = 'Multiple listeners example'

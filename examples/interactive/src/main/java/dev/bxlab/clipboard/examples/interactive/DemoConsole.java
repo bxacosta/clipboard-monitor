@@ -2,7 +2,6 @@ package dev.bxlab.clipboard.examples.interactive;
 
 import dev.bxlab.clipboard.monitor.ClipboardContent;
 import dev.bxlab.clipboard.monitor.ClipboardMonitor;
-import dev.bxlab.clipboard.monitor.internal.Stats;
 
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -14,7 +13,7 @@ import java.util.Scanner;
 /**
  * Handles user input/output for the demo application.
  */
-@SuppressWarnings({"java:S106", "java:S1192", "Duplicates"})
+
 public final class DemoConsole {
 
     private final Scanner scanner;
@@ -42,7 +41,7 @@ public final class DemoConsole {
         out.println("========================================");
         out.println("  Clipboard Monitor - Interactive Demo");
         out.println("========================================");
-        out.println("Commands: 1=text 2=image 3=files 4=read 5=stats h=help q=quit");
+        out.println("Commands: 1=text 2=image 3=files 4=read h=help q=quit");
         out.println();
     }
 
@@ -56,7 +55,6 @@ public final class DemoConsole {
         out.println("  2 - Copy image to clipboard (from file path)");
         out.println("  3 - Copy file(s) to clipboard");
         out.println("  4 - Read current clipboard content");
-        out.println("  5 - Show statistics");
         out.println("  h - Show this help");
         out.println("  q - Quit");
         out.println();
@@ -79,7 +77,6 @@ public final class DemoConsole {
             out.flush();
 
             if (!scanner.hasNextLine()) {
-                // EOF - Ctrl+C or pipe closed
                 break;
             }
 
@@ -107,8 +104,8 @@ public final class DemoConsole {
      */
     public synchronized void printClipboardChange(ClipboardContent content) {
         String timestamp = ContentHelper.formatTimestamp();
-        String type = content.getType().toString();
-        String size = ContentHelper.formatSize(content.getSize());
+        String type = content.type().toString();
+        String size = ContentHelper.formatSize(content.size());
 
         out.println();
         out.printf("[%s] %s (%s)%n", timestamp, type, size);
@@ -133,27 +130,11 @@ public final class DemoConsole {
     }
 
     /**
-     * Prints statistics.
-     */
-    public void printStats() {
-        Stats stats = monitor.getStats();
-        out.printf("STATS: %d changes | %d errors | uptime: %s%n",
-                stats.totalChanges(),
-                stats.totalErrors(),
-                ContentHelper.formatDuration(stats.uptime()));
-    }
-
-    /**
-     * Prints shutdown message with final statistics.
+     * Prints shutdown message.
      */
     public void printShutdown() {
         out.println();
         out.println("Stopping...");
-        Stats stats = monitor.getStats();
-        out.printf("Final: %d changes | %d errors | uptime: %s%n",
-                stats.totalChanges(),
-                stats.totalErrors(),
-                ContentHelper.formatDuration(stats.uptime()));
         out.println("Goodbye!");
     }
 
@@ -163,7 +144,6 @@ public final class DemoConsole {
             case "2" -> handleSetImage();
             case "3" -> handleSetFiles();
             case "4" -> handleReadCurrent();
-            case "5" -> printStats();
             case "h", "help" -> printHelp();
             case "q", "quit", "exit" -> running = false;
             default -> out.println("Unknown command. Type 'h' for help.");
@@ -185,7 +165,7 @@ public final class DemoConsole {
         }
 
         try {
-            monitor.setContent(text);
+            monitor.write(text);
             out.println("[OK] Text copied to clipboard");
         } catch (Exception e) {
             out.println("[ERROR] Failed to copy text: " + e.getMessage());
@@ -206,7 +186,6 @@ public final class DemoConsole {
             return;
         }
 
-        // Remove quotes if present (common when pasting paths)
         path = removeQuotes(path);
 
         if (!ContentHelper.isImageFile(path)) {
@@ -216,7 +195,7 @@ public final class DemoConsole {
 
         try {
             BufferedImage image = ContentHelper.loadImage(path);
-            monitor.setContent(image);
+            monitor.write(image);
             out.printf("[OK] Image copied (%dx%d)%n", image.getWidth(), image.getHeight());
         } catch (IOException e) {
             out.println("[ERROR] " + e.getMessage());
@@ -239,12 +218,11 @@ public final class DemoConsole {
             return;
         }
 
-        // Remove quotes if present
         input = removeQuotes(input);
 
         try {
             List<File> files = ContentHelper.parseFilePaths(input);
-            monitor.setContent(files);
+            monitor.write(files);
             out.printf("[OK] %d file(s) copied%n", files.size());
         } catch (IOException e) {
             out.println("[ERROR] " + e.getMessage());
@@ -254,7 +232,7 @@ public final class DemoConsole {
     }
 
     private void handleReadCurrent() {
-        var contentOpt = monitor.getCurrentContent();
+        var contentOpt = monitor.tryRead();
 
         if (contentOpt.isEmpty()) {
             out.println("Clipboard is empty or unavailable");
@@ -262,15 +240,15 @@ public final class DemoConsole {
         }
 
         ClipboardContent content = contentOpt.get();
-        String type = content.getType().toString();
-        String size = ContentHelper.formatSize(content.getSize());
+        String type = content.type().toString();
+        String size = ContentHelper.formatSize(content.size());
 
         out.printf("Current: %s (%s)%n", type, size);
         out.println(formatContent(content));
     }
 
     private String formatContent(ClipboardContent content) {
-        return switch (content.getType()) {
+        return switch (content.type()) {
             case TEXT -> content.asText()
                     .map(ContentHelper::truncateLines)
                     .orElse("(empty text)");
@@ -279,11 +257,11 @@ public final class DemoConsole {
                     .map(img -> String.format("Dimensions: %dx%d", img.getWidth(), img.getHeight()))
                     .orElse("(image data unavailable)");
 
-            case FILE_LIST -> content.asFileList()
+            case FILES -> content.asFiles()
                     .map(this::formatFileListFull)
                     .orElse("(no files)");
 
-            case UNKNOWN -> formatUnknownFull(content);
+            case UNKNOWN -> "(unknown/unsupported clipboard content)";
         };
     }
 
@@ -293,19 +271,6 @@ public final class DemoConsole {
             sb.append("  - ").append(file.getAbsolutePath()).append("\n");
         }
         if (!sb.isEmpty() && sb.charAt(sb.length() - 1) == '\n') {
-            sb.setLength(sb.length() - 1);
-        }
-        return sb.toString();
-    }
-
-    private String formatUnknownFull(ClipboardContent content) {
-        var flavors = content.getFlavors();
-        if (flavors.isEmpty()) {
-            return "(no data flavors available)";
-        }
-        StringBuilder sb = new StringBuilder("Available flavors:\n");
-        flavors.forEach(f -> sb.append("  - ").append(f.getMimeType()).append("\n"));
-        if (sb.charAt(sb.length() - 1) == '\n') {
             sb.setLength(sb.length() - 1);
         }
         return sb.toString();

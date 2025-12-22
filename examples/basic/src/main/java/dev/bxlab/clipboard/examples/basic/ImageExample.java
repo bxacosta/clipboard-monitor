@@ -2,6 +2,7 @@ package dev.bxlab.clipboard.examples.basic;
 
 import dev.bxlab.clipboard.monitor.ClipboardMonitor;
 import dev.bxlab.clipboard.monitor.ContentType;
+import dev.bxlab.clipboard.monitor.detector.PollingDetector;
 
 import java.time.Duration;
 
@@ -22,15 +23,15 @@ public final class ImageExample {
         System.out.println();
 
         try (ClipboardMonitor monitor = ClipboardMonitor.builder()
-                .pollingInterval(Duration.ofMillis(500))
+                .detector(PollingDetector.builder().interval(Duration.ofMillis(500)).build())
                 .listener(content -> {
-                    if (content.getType() == ContentType.IMAGE) {
+                    if (content.type() == ContentType.IMAGE) {
                         content.asImage().ifPresent(img -> System.out.printf("[IMAGE] %dx%d pixels, %d bytes%n",
                                 img.getWidth(),
                                 img.getHeight(),
-                                content.getSize()));
+                                content.size()));
                     } else {
-                        System.out.printf("[%s] (not an image)%n", content.getType());
+                        System.out.printf("[%s] (not an image)%n", content.type());
                     }
                 })
                 .build()) {

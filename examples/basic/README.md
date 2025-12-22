@@ -36,14 +36,6 @@ Monitors the clipboard for file list content. Displays file names and sizes when
 ./gradlew -q --console=plain :examples:basic:runFileListExample
 ```
 
-### StatsExample
-
-Monitors clipboard changes and displays statistics at regular intervals.
-
-```bash
-./gradlew -q --console=plain :examples:basic:runStatsExample
-```
-
 ### ListenerExample
 
 Demonstrates the use of multiple listeners attached to a single monitor instance.

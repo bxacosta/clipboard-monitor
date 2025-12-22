@@ -2,6 +2,7 @@ package dev.bxlab.clipboard.examples.basic;
 
 import dev.bxlab.clipboard.monitor.ClipboardContent;
 import dev.bxlab.clipboard.monitor.ClipboardMonitor;
+import dev.bxlab.clipboard.monitor.detector.PollingDetector;
 
 /**
  * Basic example: Read current clipboard content.
@@ -12,15 +13,14 @@ import dev.bxlab.clipboard.monitor.ClipboardMonitor;
 public final class BasicReadExample {
 
     public static void main(String[] args) {
-        // Create monitor with no-op listener (required by API)
+        // Builder requires at least one detector + listener.
         try (ClipboardMonitor monitor = ClipboardMonitor.builder()
+                .detector(PollingDetector.defaults())
                 .listener(content -> {
                 })
                 .build()) {
 
-            // Read current clipboard content
-            var contentOpt = monitor.getCurrentContent();
-
+            var contentOpt = monitor.tryRead();
             if (contentOpt.isEmpty()) {
                 System.out.println("Clipboard is empty or unavailable");
                 return;
@@ -28,12 +28,11 @@ public final class BasicReadExample {
 
             ClipboardContent content = contentOpt.get();
             System.out.println("Clipboard content:");
-            System.out.println("  Type: " + content.getType());
-            System.out.println("  Size: " + content.getSize() + " bytes");
-            System.out.println("  Hash: " + content.getHash());
+            System.out.println("  Type: " + content.type());
+            System.out.println("  Size: " + content.size() + " bytes");
+            System.out.println("  Hash: " + content.hash());
 
-            // Print type-specific info
-            switch (content.getType()) {
+            switch (content.type()) {
                 case TEXT -> content.asText().ifPresent(text -> {
                     String preview = text.length() > 100
                             ? text.substring(0, 100) + "..."
@@ -45,7 +44,7 @@ public final class BasicReadExample {
                         System.out.printf("  Image: %dx%d pixels%n", img.getWidth(), img.getHeight())
                 );
 
-                case FILE_LIST -> content.asFileList().ifPresent(files -> {
+                case FILES -> content.asFiles().ifPresent(files -> {
                     System.out.println("  Files:");
                     files.stream().limit(5).forEach(f ->
                             System.out.println("    - " + f.getAbsolutePath())
@@ -55,12 +54,7 @@ public final class BasicReadExample {
                     }
                 });
 
-                case UNKNOWN -> {
-                    System.out.println("  Available data flavors:");
-                    content.getFlavors().stream().limit(3).forEach(f ->
-                            System.out.println("    - " + f.getMimeType())
-                    );
-                }
+                case UNKNOWN -> System.out.println("  Unknown/unsupported clipboard content");
             }
         }
     }

@@ -4,7 +4,6 @@ import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -41,23 +40,6 @@ public final class ContentHelper {
             return String.format("%.1f MB", bytes / (1024.0 * 1024));
         }
         return String.format("%.1f GB", bytes / (1024.0 * 1024 * 1024));
-    }
-
-    /**
-     * Formats duration to human-readable string.
-     *
-     * @param duration duration to format
-     * @return formatted string like "2m 15s"
-     */
-    public static String formatDuration(Duration duration) {
-        long seconds = duration.getSeconds();
-        if (seconds < 60) {
-            return seconds + "s";
-        }
-        if (seconds < 3600) {
-            return String.format("%dm %ds", seconds / 60, seconds % 60);
-        }
-        return String.format("%dh %dm %ds", seconds / 3600, (seconds % 3600) / 60, seconds % 60);
     }
 
     /**

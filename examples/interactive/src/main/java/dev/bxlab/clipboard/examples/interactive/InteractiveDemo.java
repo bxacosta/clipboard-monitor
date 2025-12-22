@@ -1,7 +1,9 @@
 package dev.bxlab.clipboard.examples.interactive;
 
+import dev.bxlab.clipboard.monitor.ClipboardContent;
 import dev.bxlab.clipboard.monitor.ClipboardListener;
 import dev.bxlab.clipboard.monitor.ClipboardMonitor;
+import dev.bxlab.clipboard.monitor.detector.PollingDetector;
 
 /**
  * Interactive demo for ClipboardMonitor.
@@ -13,7 +15,6 @@ import dev.bxlab.clipboard.monitor.ClipboardMonitor;
  *   <li>Real-time clipboard change notifications</li>
  *   <li>Copy text, images, or files to the clipboard</li>
  *   <li>Read current clipboard content</li>
- *   <li>View monitoring statistics</li>
  * </ul>
  */
 public final class InteractiveDemo {
@@ -32,13 +33,11 @@ public final class InteractiveDemo {
     }
 
     private void run() {
-        // We need the monitor reference for DemoConsole, but DemoConsole needs the monitor.
-        // Solution: use a holder that gets populated after the console is created.
         final DemoConsole[] consoleHolder = new DemoConsole[1];
 
         ClipboardListener forwardingListener = new ClipboardListener() {
             @Override
-            public void onClipboardChange(dev.bxlab.clipboard.monitor.ClipboardContent content) {
+            public void onClipboardChange(ClipboardContent content) {
                 if (consoleHolder[0] != null) {
                     consoleHolder[0].printClipboardChange(content);
                 }
@@ -53,23 +52,20 @@ public final class InteractiveDemo {
         };
 
         monitor = ClipboardMonitor.builder()
+                .detector(PollingDetector.defaults())
                 .listener(forwardingListener)
                 .build();
 
         console = new DemoConsole(monitor);
         consoleHolder[0] = console;
 
-        // Set up the shutdown hook for Ctrl+C
         setupShutdownHook();
 
-        // Print a banner and start
         console.printBanner();
         monitor.start();
 
-        // Run an interactive loop (blocks until quit)
         console.runInteractiveLoop();
 
-        // Clean shutdown if not already done by hook
         if (!shuttingDown) {
             shutdown();
         }

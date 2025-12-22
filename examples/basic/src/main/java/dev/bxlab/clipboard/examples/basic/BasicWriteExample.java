@@ -2,6 +2,7 @@ package dev.bxlab.clipboard.examples.basic;
 
 import dev.bxlab.clipboard.monitor.ClipboardContent;
 import dev.bxlab.clipboard.monitor.ClipboardMonitor;
+import dev.bxlab.clipboard.monitor.detector.PollingDetector;
 
 /**
  * Basic example: Write text to clipboard.
@@ -12,26 +13,26 @@ import dev.bxlab.clipboard.monitor.ClipboardMonitor;
 public final class BasicWriteExample {
 
     public static void main(String[] args) {
-        // Get text from args or use default
         String textToWrite = args.length > 0
                 ? String.join(" ", args)
                 : "Hello from ClipboardMonitor! (timestamp: " + System.currentTimeMillis() + ")";
 
         try (ClipboardMonitor monitor = ClipboardMonitor.builder()
+                .detector(PollingDetector.defaults())
                 .listener(content -> {
                 })
                 .build()) {
 
-            // Write text to clipboard
-            monitor.setContent(textToWrite);
+            monitor.write(textToWrite);
             System.out.println("Text copied to clipboard:");
             System.out.println("  \"" + textToWrite + "\"");
 
-            // Verify by reading back
-            monitor.getCurrentContent().flatMap(ClipboardContent::asText).ifPresent(text -> {
-                boolean matches = text.equals(textToWrite);
-                System.out.println("  Verified: " + (matches ? "OK" : "MISMATCH"));
-            });
+            monitor.tryRead()
+                    .flatMap(ClipboardContent::asText)
+                    .ifPresent(text -> {
+                        boolean matches = text.equals(textToWrite);
+                        System.out.println("  Verified: " + (matches ? "OK" : "MISMATCH"));
+                    });
         }
     }
 }

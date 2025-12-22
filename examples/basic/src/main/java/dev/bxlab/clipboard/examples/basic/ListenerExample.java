@@ -3,6 +3,7 @@ package dev.bxlab.clipboard.examples.basic;
 import dev.bxlab.clipboard.monitor.ClipboardContent;
 import dev.bxlab.clipboard.monitor.ClipboardListener;
 import dev.bxlab.clipboard.monitor.ClipboardMonitor;
+import dev.bxlab.clipboard.monitor.detector.PollingDetector;
 
 import java.time.Duration;
 import java.time.LocalTime;
@@ -26,13 +27,12 @@ public final class ListenerExample {
         System.out.println("Copy content to see multiple listeners react. Press Ctrl+C to stop.");
         System.out.println();
 
-        // Create named listeners for different purposes
         ClipboardListener loggingListener = new LoggingListener("Logger");
         ClipboardListener textOnlyListener = new TextOnlyListener("TextFilter");
         ClipboardListener countingListener = new CountingListener("Counter");
 
         try (ClipboardMonitor monitor = ClipboardMonitor.builder()
-                .pollingInterval(Duration.ofMillis(500))
+                .detector(PollingDetector.builder().interval(Duration.ofMillis(500)).build())
                 .listener(loggingListener)
                 .listener(textOnlyListener)
                 .listener(countingListener)
@@ -49,9 +49,6 @@ public final class ListenerExample {
         System.out.println("Done.");
     }
 
-    /**
-     * Listener that logs all clipboard changes with a timestamp.
-     */
     static class LoggingListener implements ClipboardListener {
         private final String name;
 
@@ -63,7 +60,7 @@ public final class ListenerExample {
         public void onClipboardChange(ClipboardContent content) {
             String time = LocalTime.now().format(TIME_FMT);
             System.out.printf("[%s][%s] %s - %d bytes%n",
-                    time, name, content.getType(), content.getSize());
+                    time, name, content.type(), content.size());
         }
 
         @Override
@@ -72,9 +69,6 @@ public final class ListenerExample {
         }
     }
 
-    /**
-     * Listener that only processes text content.
-     */
     static class TextOnlyListener implements ClipboardListener {
         private final String name;
 
@@ -94,14 +88,11 @@ public final class ListenerExample {
         }
     }
 
-    /**
-     * Listener that counts clipboard changes by type.
-     */
     static class CountingListener implements ClipboardListener {
         private final String name;
         private int textCount = 0;
         private int imageCount = 0;
-        private int fileCount = 0;
+        private int filesCount = 0;
         private int otherCount = 0;
 
         CountingListener(String name) {
@@ -110,14 +101,14 @@ public final class ListenerExample {
 
         @Override
         public void onClipboardChange(ClipboardContent content) {
-            switch (content.getType()) {
+            switch (content.type()) {
                 case TEXT -> textCount++;
                 case IMAGE -> imageCount++;
-                case FILE_LIST -> fileCount++;
+                case FILES -> filesCount++;
                 case UNKNOWN -> otherCount++;
             }
             System.out.printf("[%s] Counts: text=%d, image=%d, files=%d, other=%d%n",
-                    name, textCount, imageCount, fileCount, otherCount);
+                    name, textCount, imageCount, filesCount, otherCount);
         }
     }
 }
