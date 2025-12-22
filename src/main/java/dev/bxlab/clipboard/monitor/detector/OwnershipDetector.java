@@ -1,6 +1,9 @@
 package dev.bxlab.clipboard.monitor.detector;
 
+import dev.bxlab.clipboard.monitor.ClipboardContent;
 import dev.bxlab.clipboard.monitor.internal.ClipboardAccessor;
+import lombok.AccessLevel;
+import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import java.awt.Toolkit;
@@ -14,7 +17,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
- * Detects clipboard changes using clipboard ownership mechanism.
+ * Detects clipboard changes using the clipboard ownership mechanism.
  * <p>
  * This detector takes ownership of the clipboard and gets notified when
  * another process takes ownership. It provides lower latency than
@@ -53,7 +56,7 @@ public final class OwnershipDetector implements ChangeDetector, ClipboardOwner {
 
     private final Duration delay;
     private final AtomicBoolean running = new AtomicBoolean(false);
-    private final AtomicReference<Consumer<String>> hashChangeCallback = new AtomicReference<>();
+    private final AtomicReference<Consumer<ClipboardContent>> contentChangeCallback = new AtomicReference<>();
 
     private Clipboard clipboard;
 
@@ -72,8 +75,6 @@ public final class OwnershipDetector implements ChangeDetector, ClipboardOwner {
 
     /**
      * Creates an OwnershipDetector with default settings.
-     * <p>
-     * Uses a processing delay of 50ms.
      *
      * @return new OwnershipDetector with defaults
      */
@@ -86,33 +87,19 @@ public final class OwnershipDetector implements ChangeDetector, ClipboardOwner {
      *
      * @return processing delay
      */
-    @SuppressWarnings("all")
+    @SuppressWarnings("")
     public Duration getDelay() {
         return delay;
     }
 
-    /**
-     * Initializes the detector with a callback for hash changes.
-     * <p>
-     * Called by ClipboardMonitor when the detector is attached.
-     * The callback receives the hash of new content when a change is detected.
-     *
-     * @param callback callback to invoke when clipboard hash changes
-     */
-    public void initialize(Consumer<String> callback) {
-        this.hashChangeCallback.set(Objects.requireNonNull(callback, "callback cannot be null"));
-    }
-
     @Override
-    public void start() {
+    public void start(Consumer<ClipboardContent> callback, String initialHash) {
         if (running.getAndSet(true)) {
             log.debug("OwnershipDetector already running");
             return;
         }
 
-        if (hashChangeCallback.get() == null) {
-            throw new IllegalStateException("Detector not initialized. Call initialize() first.");
-        }
+        this.contentChangeCallback.set(Objects.requireNonNull(callback, "callback cannot be null"));
 
         this.clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
         takeOwnership();
@@ -135,9 +122,6 @@ public final class OwnershipDetector implements ChangeDetector, ClipboardOwner {
 
     /**
      * Called by the system when another process takes clipboard ownership.
-     * <p>
-     * Note: This is called from the AWT event thread, so processing is done
-     * asynchronously in a virtual thread.
      *
      * @param clipboard the clipboard that lost ownership
      * @param contents  the contents that were on the clipboard
@@ -158,8 +142,6 @@ public final class OwnershipDetector implements ChangeDetector, ClipboardOwner {
 
     /**
      * Re-takes ownership after writing content.
-     * <p>
-     * Call after writing to clipboard to continue monitoring.
      *
      * @param content content just written to clipboard
      */
@@ -182,21 +164,15 @@ public final class OwnershipDetector implements ChangeDetector, ClipboardOwner {
         }
 
         try {
-            // Wait for the delay to let the clipboard settle
             Thread.sleep(delay.toMillis());
 
             if (!running.get()) {
                 return;
             }
 
-            // Read new content
-            Transferable newContent = ClipboardAccessor.getContents();
-            if (newContent != null) {
-                String hash = ClipboardAccessor.calculateHash(newContent);
-                hashChangeCallback.get().accept(hash);
-            }
+            ClipboardContent content = ClipboardAccessor.readContent();
+            contentChangeCallback.get().accept(content);
 
-            // Retake ownership
             takeOwnership();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -225,17 +201,12 @@ public final class OwnershipDetector implements ChangeDetector, ClipboardOwner {
     /**
      * Builder for creating OwnershipDetector instances.
      */
+    @NoArgsConstructor(access = AccessLevel.PRIVATE)
     public static final class Builder {
         private Duration delay = DEFAULT_DELAY;
 
-        private Builder() {
-        }
-
         /**
          * Sets the delay before processing clipboard change after losing ownership.
-         * <p>
-         * A short delay allows the clipboard to settle before reading.
-         * Default is 50ms.
          *
          * @param delay processing delay (must be non-negative)
          * @return this builder
@@ -243,10 +214,6 @@ public final class OwnershipDetector implements ChangeDetector, ClipboardOwner {
          * @throws IllegalArgumentException if delay is negative
          */
         public Builder delay(Duration delay) {
-            Objects.requireNonNull(delay, "delay cannot be null");
-            if (delay.isNegative()) {
-                throw new IllegalArgumentException("delay cannot be negative: " + delay);
-            }
             this.delay = delay;
             return this;
         }
@@ -257,6 +224,10 @@ public final class OwnershipDetector implements ChangeDetector, ClipboardOwner {
          * @return new OwnershipDetector instance
          */
         public OwnershipDetector build() {
+            Objects.requireNonNull(delay, "delay cannot be null");
+            if (delay.isNegative()) {
+                throw new IllegalArgumentException("delay cannot be negative: " + delay);
+            }
             return new OwnershipDetector(this);
         }
     }

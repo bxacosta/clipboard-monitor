@@ -1,5 +1,9 @@
 package dev.bxlab.clipboard.monitor.detector;
 
+import dev.bxlab.clipboard.monitor.ClipboardContent;
+
+import java.util.function.Consumer;
+
 /**
  * Strategy interface for clipboard change detection.
  * <p>
@@ -8,7 +12,6 @@ package dev.bxlab.clipboard.monitor.detector;
  *   <li>{@link PollingDetector} - Detects changes via periodic polling (recommended)</li>
  *   <li>{@link OwnershipDetector} - Detects changes via clipboard ownership (lower latency)</li>
  * </ul>
- * <p>
  *
  * @see PollingDetector
  * @see OwnershipDetector
@@ -16,12 +19,16 @@ package dev.bxlab.clipboard.monitor.detector;
 public sealed interface ChangeDetector permits PollingDetector, OwnershipDetector {
 
     /**
-     * Starts the detector.
+     * Starts the detector with the given callback and initial content hash.
      * <p>
-     * Must be called before the detector will begin detecting changes.
+     * The caller provides the initial hash to avoid redundant clipboard reads.
      * Safe to call multiple times (no-op if already running).
+     *
+     * @param callback    callback to invoke when clipboard content changes
+     * @param initialHash hash of current clipboard content for change detection baseline
+     * @throws NullPointerException if callback is null
      */
-    void start();
+    void start(Consumer<ClipboardContent> callback, String initialHash);
 
     /**
      * Stops the detector.
