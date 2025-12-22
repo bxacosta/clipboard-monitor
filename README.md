@@ -1,20 +1,38 @@
 # Clipboard Monitor
 
+[![Java](https://img.shields.io/badge/Java-21%2B-orange)](https://openjdk.org/)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.0.0-green)]()
+
 Java library for monitoring system clipboard changes in real-time. Provides reliable detection of clipboard
 modifications and supports text, images, and file lists.
 
+## Quick Start
+
+```java
+import dev.bxlab.clipboard.monitor.ClipboardMonitor;
+import dev.bxlab.clipboard.monitor.detector.PollingDetector;
+
+try (ClipboardMonitor monitor = ClipboardMonitor.builder()
+        .detector(PollingDetector.defaults())
+        .listener(content -> System.out.println("Clipboard changed: " + content.type()))
+        .build()) {
+
+    monitor.start();
+    // Application logic here
+}
+```
+
 ## Features
 
-- Real-time clipboard change detection using a hybrid approach (ownership-based and polling)
-- Support for multiple content types: text, images, and file lists
-- Thread-safe implementation with configurable listeners
-- Anti-loop protection for bidirectional synchronization scenarios
-- Configurable polling intervals and debounce settings
-- Comprehensive statistics and monitoring capabilities
+- **Pluggable detection strategies:** Choose between `Polling` or `Ownership` strategies
+- **Multiple content types:** Support for text, images, and file lists with type-safe access
+- **High performance:** Virtual threads for listener isolation, single-pass clipboard read, configurable debouncing
+- **Bidirectional sync ready:** Built-in loop prevention with automatic tracking of own writes
 
 ## Requirements
 
-- Java 17 or higher
+- Java 21+
 - SLF4J API for logging
 
 ## Installation
@@ -23,7 +41,12 @@ modifications and supports text, images, and file lists.
 
 ```gradle
 dependencies {
-    implementation 'dev.bxlab.clipboard:clipboard-monitor:1.0.0-SNAPSHOT'
+    implementation 'dev.bxlab.clipboard:clipboard-monitor:1.0.0'
+
+    // SLF4J implementation (choose one)
+    implementation 'ch.qos.logback:logback-classic:1.5.22'
+    // or
+    implementation 'org.slf4j:slf4j-simple:2.0.16'
 }
 ```
 
@@ -33,163 +56,162 @@ dependencies {
 <dependency>
     <groupId>dev.bxlab.clipboard</groupId>
     <artifactId>clipboard-monitor</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>1.0.0</version>
+</dependency>
+
+<!-- SLF4J implementation (choose one) -->
+<dependency>
+    <groupId>ch.qos.logback</groupId>
+    <artifactId>logback-classic</artifactId>
+    <version>1.5.22</version>
 </dependency>
 ```
 
+---
+
 ## Usage
 
-### Basic Monitoring
+### Complete Monitoring
+
+Listener exceptions are isolated to prevent monitoring interruption. Override `onError()` for custom error handling:
 
 ```java
-// Using try-with-resources (recommended)
+import dev.bxlab.clipboard.monitor.*;
+import dev.bxlab.clipboard.monitor.detector.PollingDetector;
+
+ClipboardListener listener = new ClipboardListener() {
+    @Override
+    public void onClipboardChange(ClipboardContent content) {
+        // Process content
+        if (someCondition) {
+            throw new RuntimeException("Processing failed");
+        }
+    }
+
+    @Override
+    public void onError(Exception error) {
+        log.error("Listener error: {}", error.getMessage(), error);
+        // Send to monitoring system, retry, etc.
+    }
+};
+
 try (ClipboardMonitor monitor = ClipboardMonitor.builder()
-        .listener(content -> System.out.println("Clipboard changed: " + content.getType()))
+        .detector(PollingDetector.defaults())
+        .listener(listener)
         .build()) {
     monitor.start();
-    // ... application logic
 }
-
-// Or manual lifecycle management
-ClipboardMonitor monitor = ClipboardMonitor.builder()
-    .listener(content -> System.out.println("Clipboard changed: " + content.getType()))
-    .build();
-
-monitor.start();
-// Later, when done
-monitor.close();
 ```
 
-### Processing Different Content Types
+### Read and Write Operations
+
+Direct clipboard access without monitoring. Useful for simple clipboard utilities:
 
 ```java
-ClipboardMonitor monitor = ClipboardMonitor.builder()
-    .listener(content -> {
-        switch (content.getType()) {
-            case TEXT -> content.asText().ifPresent(text -> 
-                System.out.println("Text: " + text)
-            );
-            case IMAGE -> content.asImage().ifPresent(image -> 
-                System.out.println("Image: " + image.getWidth() + "x" + image.getHeight())
-            );
-            case FILE_LIST -> content.asFileList().ifPresent(files -> 
-                System.out.println("Files: " + files.size())
-            );
-            case UNKNOWN -> System.out.println("Unknown content type");
-        }
-    })
-    .build();
+import dev.bxlab.clipboard.monitor.ClipboardMonitor;
+import dev.bxlab.clipboard.monitor.detector.PollingDetector;
+import java.awt.image.BufferedImage;
+import java.io.File;
+import java.util.List;
 
-monitor.start();
+try (ClipboardMonitor monitor = ClipboardMonitor.builder()
+        .detector(PollingDetector.defaults())
+        .listener(c -> {}) // Required by API but not used
+        .build()) {
+
+    // Write operations (no start() required)
+    monitor.write("Hello from clipboard-monitor");
+    monitor.write(bufferedImage);
+    monitor.write(List.of(new File("file1.txt"), new File("file2.txt")));
+
+    // Read with exception handling
+    ClipboardContent content = monitor.read();
+
+    // Read with Optional (exception-free)
+    monitor.tryRead()
+           .flatMap(ClipboardContent::asText)
+           .ifPresent(text -> System.out.println("Current text: " + text));
+}
 ```
 
-### Advanced Configuration
+**Note**: Read/write operations do not require calling `start()`. Monitor must still be built with a detector and
+listener (API requirement).
+
+---
+
+## Configuration
+
+### Monitor Configuration
 
 ```java
-ClipboardMonitor monitor = ClipboardMonitor.builder()
-    .listener(this::handleClipboardChange)
-    .pollingInterval(Duration.ofMillis(500))
-    .debounce(Duration.ofMillis(100))
-    .ownershipEnabled(true)
-    .notifyInitialContent(false)
-    .ignoreOwnChanges(true)
-    .build();
+import java.time.Duration;
 
-monitor.start();
+ClipboardMonitor.builder()
+    .detector(PollingDetector.defaults())
+    .listener(content -> { /* ... */ })
+    .debounce(Duration.ofMillis(100))  // Custom debounce
+    .notifyOnStart(true)               // Notify initial content
+    .build();
 ```
 
-### Bidirectional Synchronization
+| Parameter       | Description                                               | Default |
+|-----------------|-----------------------------------------------------------|---------|
+| `debounce`      | Minimum time between notifications (groups rapid changes) | 50ms    |
+| `notifyOnStart` | Notify current clipboard content when `start()` is called | false   |
 
-The library includes anti-loop protection for scenarios where clipboard content is synchronized between multiple
-sources:
+**Use cases**:
 
-```java
-ClipboardMonitor monitor = ClipboardMonitor.builder()
-    .listener(content -> synchronizeToRemote(content))
-    .build();
+- **High debounce (100-200ms)**: Reduces notification frequency, useful when processing is expensive
+- **Low debounce (20-50ms)**: More responsive, suitable for UI updates
+- **notifyOnStart=true**: Useful for sync applications that need current state on startup
 
-monitor.start();
-
-// Set content from remote source without triggering listener
-monitor.setContent("content from remote");
-```
-
-## API Reference
-
-### ClipboardMonitor
-
-Main class for monitoring clipboard changes.
-
-#### Builder Methods
-
-- `listener(ClipboardListener)` - Adds a listener for clipboard changes
-- `pollingInterval(Duration)` - Sets the polling interval (default: 500ms)
-- `debounce(Duration)` - Sets debounce delay (default: 100ms)
-- `ownershipEnabled(boolean)` - Enables/disables ownership detection (default: true)
-- `notifyInitialContent(boolean)` - Notifies current clipboard content on start (default: false)
-- `ignoreOwnChanges(boolean)` - Ignores changes made via setContent() methods (default: true)
-
-#### Methods
-
-- `start()` - Starts monitoring clipboard changes
-- `close()` - Stops monitoring and releases all resources (implements AutoCloseable)
-- `isRunning()` - Returns whether the monitor is currently active
-- `setContent(String)` - Sets text content in clipboard
-- `setContent(BufferedImage)` - Sets image content in clipboard
-- `setContent(List<File>)` - Sets file list content in clipboard
-- `getCurrentContent()` - Returns current clipboard content (Optional)
-- `getStats()` - Returns monitoring statistics
-- `addListener(ClipboardListener)` - Adds a listener dynamically
-- `removeListener(ClipboardListener)` - Removes a listener
-
-### ClipboardContent
-
-Immutable representation of clipboard content received in listener callbacks.
-
-#### Methods
-
-- `getType()` - Returns the content type (TEXT, IMAGE, FILE_LIST, UNKNOWN)
-- `asText()` - Returns content as text (Optional)
-- `asImage()` - Returns content as BufferedImage (Optional)
-- `asFileList()` - Returns content as file list (Optional)
-- `asBytes()` - Returns content as raw bytes
-- `getTimestamp()` - Returns capture timestamp
-- `getHash()` - Returns content hash for change detection
-- `getSize()` - Returns content size in bytes
-- `getFlavors()` - Returns available data flavors
-
-## Architecture
-
-The library uses a hybrid detection approach:
-
-1. **Ownership-based detection**: Fast notification when the application loses clipboard ownership
-2. **Polling fallback**: Reliable detection when ownership mechanism is unavailable or bypassed
-3. **Debouncing**: Prevents duplicate notifications for rapid changes
-4. **Anti-loop protection**: Prevents infinite loops in synchronization scenarios
-
-## Thread Safety
-
-All public APIs are thread-safe. Listeners are invoked in a dedicated callback thread, ensuring that listener execution
-does not block clipboard monitoring.
+---
 
 ## Examples
 
-The project includes example applications in the `examples/` directory.
+The project includes runnable examples demonstrating various use cases:
 
-```bash
-# Interactive demo
-./gradlew -q --console=plain :examples:interactive:run
+| Example              | Description                               | Command                                                           |
+|----------------------|-------------------------------------------|-------------------------------------------------------------------|
+| **Interactive Demo** | Full-featured console with all operations | `./gradlew -q --console=plain :examples:interactive:run`          |
+| **Basic Listener**   | Simple clipboard change monitoring        | `./gradlew -q --console=plain :examples:basic:runListenerExample` |
+| **Basic Read**       | Reading current clipboard content         | `./gradlew -q --console=plain :examples:basic:runBasicRead`       |
+| **Basic Write**      | Writing to clipboard                      | `./gradlew -q --console=plain :examples:basic:runBasicWrite`      |
+| **Image Handling**   | Working with clipboard images             | `./gradlew -q --console=plain :examples:basic:runImageExample`    |
+| **File Lists**       | Monitoring file copy operations           | `./gradlew -q --console=plain :examples:basic:runFileListExample` |
 
-# Basic examples
-./gradlew -q --console=plain :examples:basic:runBasicRead
-./gradlew -q --console=plain :examples:basic:runBasicWrite
-./gradlew -q --console=plain :examples:basic:runImageExample
-./gradlew -q --console=plain :examples:basic:runFileListExample
-./gradlew -q --console=plain :examples:basic:runStatsExample
-./gradlew -q --console=plain :examples:basic:runListenerExample
-```
+For detailed documentation and source code, see [examples/README.md](examples/README.md).
 
-For detailed documentation, see [examples/README.md](examples/README.md).
+---
+
+## Architecture
+
+The library uses a layered architecture with three main components:
+
+1. **Detector Layer:** Monitors clipboard using chosen strategy (polling or ownership-based) and detects hash changes
+2. **Monitor Layer:** Debounces rapid changes, filters own writes using LRU cache, and reads stable content
+3. **Listener Layer:** Each listener runs in an isolated virtual thread with independent error handling
+
+Thread safety is guaranteed through atomic primitives, volatile fields, dedicated lock objects, and immutable data
+structures.
+
+---
+
+## Library Reference
+
+For comprehensive API documentation, see [llm/LIBRARY_REFERENCE.md](llm/LIBRARY_REFERENCE.md).
+
+This reference document is optimized for LLM consumption and includes:
+
+- Complete API reference with all methods, parameters, and return types
+- Detector configuration (PollingDetector, OwnershipDetector)
+- Content type implementations (TextContent, ImageContent, FilesContent, UnknownContent)
+- Usage examples for common scenarios
+- Thread safety and resource management details
+
+Ideal for AI-assisted development and code generation tools.
+
+---
 
 ## License
 
