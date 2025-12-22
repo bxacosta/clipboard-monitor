@@ -64,19 +64,15 @@ public final class InteractiveDemo {
         console.printBanner();
         monitor.start();
 
-        console.runInteractiveLoop();
-
-        if (!shuttingDown) {
+        try {
+            console.runInteractiveLoop();
+        } finally {
             shutdown();
         }
     }
 
     private void setupShutdownHook() {
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            if (!shuttingDown) {
-                shutdown();
-            }
-        }, "demo-shutdown-hook"));
+        Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown, "demo-shutdown-hook"));
     }
 
     private synchronized void shutdown() {
@@ -86,7 +82,6 @@ public final class InteractiveDemo {
         shuttingDown = true;
 
         console.stopLoop();
-        console.printShutdown();
         monitor.close();
     }
 }

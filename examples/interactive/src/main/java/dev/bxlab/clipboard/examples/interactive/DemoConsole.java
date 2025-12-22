@@ -13,7 +13,7 @@ import java.util.Scanner;
 /**
  * Handles user input/output for the demo application.
  */
-
+@SuppressWarnings({"java:S106"})
 public final class DemoConsole {
 
     private final Scanner scanner;
@@ -129,15 +129,6 @@ public final class DemoConsole {
         out.flush();
     }
 
-    /**
-     * Prints shutdown message.
-     */
-    public void printShutdown() {
-        out.println();
-        out.println("Stopping...");
-        out.println("Goodbye!");
-    }
-
     private void processCommand(String command) {
         switch (command) {
             case "1" -> handleSetText();
@@ -173,39 +164,28 @@ public final class DemoConsole {
     }
 
     private void handleSetImage() {
-        out.print("Enter image path: ");
-        out.flush();
+        handlePathInput("Enter image path: ", path -> {
+            if (!ContentHelper.isImageFile(path)) {
+                out.println("[ERROR] Not a supported image file (use .png, .jpg, .jpeg)");
+                return;
+            }
 
-        if (!scanner.hasNextLine()) {
-            return;
-        }
-
-        String path = scanner.nextLine().trim();
-        if (path.isEmpty()) {
-            out.println("[WARN] No path provided");
-            return;
-        }
-
-        path = removeQuotes(path);
-
-        if (!ContentHelper.isImageFile(path)) {
-            out.println("[ERROR] Not a supported image file (use .png, .jpg, .jpeg)");
-            return;
-        }
-
-        try {
             BufferedImage image = ContentHelper.loadImage(path);
             monitor.write(image);
             out.printf("[OK] Image copied (%dx%d)%n", image.getWidth(), image.getHeight());
-        } catch (IOException e) {
-            out.println("[ERROR] " + e.getMessage());
-        } catch (Exception e) {
-            out.println("[ERROR] Failed to copy image: " + e.getMessage());
-        }
+        });
     }
 
     private void handleSetFiles() {
-        out.print("Enter file path(s): ");
+        handlePathInput("Enter file path(s): ", path -> {
+            List<File> files = ContentHelper.parseFilePaths(path);
+            monitor.write(files);
+            out.printf("[OK] %d file(s) copied%n", files.size());
+        });
+    }
+
+    private void handlePathInput(String prompt, PathProcessor processor) {
+        out.print(prompt);
         out.flush();
 
         if (!scanner.hasNextLine()) {
@@ -218,17 +198,20 @@ public final class DemoConsole {
             return;
         }
 
-        input = removeQuotes(input);
+        String path = removeQuotes(input);
 
         try {
-            List<File> files = ContentHelper.parseFilePaths(input);
-            monitor.write(files);
-            out.printf("[OK] %d file(s) copied%n", files.size());
+            processor.process(path);
         } catch (IOException e) {
             out.println("[ERROR] " + e.getMessage());
         } catch (Exception e) {
-            out.println("[ERROR] Failed to copy files: " + e.getMessage());
+            out.println("[ERROR] Failed to process: " + e.getMessage());
         }
+    }
+
+    @FunctionalInterface
+    private interface PathProcessor {
+        void process(String path) throws IOException;
     }
 
     private void handleReadCurrent() {
