@@ -1,72 +1,205 @@
-# Clipboard Monitor - Technical Reference
+# Clipboard Monitor API Reference
 
-## Overview
+**Java 21** | `dev.bxlab.clipboard.monitor` | **v2.0.0-SNAPSHOT**
 
-Java library for monitoring system clipboard changes. Supports text, images, and file lists.
-
-**Package**: `dev.bxlab.clipboard.monitor`  
-**Minimum Java**: 17  
-**Dependencies**: SLF4J API
+System clipboard monitoring library. Supports text, images, and file lists.
 
 ## Installation
 
 ```gradle
 dependencies {
-    implementation 'dev.bxlab.clipboard:clipboard-monitor:1.0.0-SNAPSHOT'
+    implementation 'dev.bxlab.clipboard:clipboard-monitor:2.0.0-SNAPSHOT'
+    runtimeOnly 'ch.qos.logback:logback-classic:1.5.22'  // SLF4J implementation required
+}
+```
+
+## Quick Start
+
+```java
+try (ClipboardMonitor monitor = ClipboardMonitor.builder()
+        .detector(PollingDetector.defaults())
+        .listener(content -> System.out.println("Changed: " + content.type()))
+        .build()) {
+    monitor.start();
+    // ... application runs
 }
 ```
 
 ---
 
-## Core Classes
+## ClipboardMonitor
 
-### ClipboardMonitor
+Main entry point. Implements `AutoCloseable`. Must call `start()` to begin monitoring.
 
-Main entry point. Implements `AutoCloseable`.
+### Static Methods
 
-#### Creating an Instance
+| Method      | Returns | Description              |
+|-------------|---------|--------------------------|
+| `builder()` | Builder | Creates builder instance |
 
-```java
-ClipboardMonitor monitor = ClipboardMonitor.builder()
-    .listener(content -> { /* handle change */ })
-    .build();
-```
+### Instance Methods
 
-#### Builder Options
+| Method                 | Parameters | Returns                      | Description                                       |
+|------------------------|------------|------------------------------|---------------------------------------------------|
+| `start()`              | -          | void                         | Starts monitoring (idempotent)                    |
+| `close()`              | -          | void                         | Stops monitoring, releases resources (idempotent) |
+| `isRunning()`          | -          | boolean                      | Returns true if monitoring is active              |
+| `write(String)`        | text       | void                         | Writes text to clipboard                          |
+| `write(BufferedImage)` | image      | void                         | Writes image to clipboard                         |
+| `write(List<File>)`    | files      | void                         | Writes files to clipboard                         |
+| `read()`               | -          | ClipboardContent             | Reads clipboard (throws on error)                 |
+| `tryRead()`            | -          | Optional\<ClipboardContent\> | Reads clipboard (empty on error)                  |
 
-| Method                          | Type     | Default | Description                                         |
-|---------------------------------|----------|---------|-----------------------------------------------------|
-| `listener(ClipboardListener)`   | required | -       | Callback for clipboard changes. Can add multiple.   |
-| `pollingInterval(Duration)`     | optional | 500ms   | Interval between clipboard polls.                   |
-| `debounce(Duration)`            | optional | 100ms   | Delay to group rapid changes into one notification. |
-| `ownershipEnabled(boolean)`     | optional | true    | Enable fast ownership-based detection.              |
-| `notifyInitialContent(boolean)` | optional | false   | Notify current clipboard content on start.          |
-| `ignoreOwnChanges(boolean)`     | optional | true    | Ignore changes made via `setContent()` methods.     |
+**Note**: `write()` methods track content internally to prevent notification loops. Content written via `write()` won't trigger listeners.
 
-**Important**: At least one listener is required. Calling `build()` without a listener throws `IllegalStateException`.
+### Builder
 
-#### Instance Methods
+| Method                        | Parameters | Required | Default | Description                                  |
+|-------------------------------|------------|----------|---------|----------------------------------------------|
+| `detector(ChangeDetector)`    | detector   | **Yes**  | -       | Sets change detection strategy               |
+| `listener(ClipboardListener)` | listener   | **Yes**  | -       | Adds listener (can be called multiple times) |
+| `debounce(Duration)`          | duration   | No       | 50ms    | Debounce delay for grouping rapid changes    |
+| `notifyOnStart(boolean)`      | notify     | No       | false   | Notify initial clipboard content on start    |
 
-| Method                              | Return                       | Description                                                                     |
-|-------------------------------------|------------------------------|---------------------------------------------------------------------------------|
-| `start()`                           | void                         | Starts monitoring. Must be called after `build()`. Safe to call multiple times. |
-| `close()`                           | void                         | Stops monitoring, releases resources. Idempotent.                               |
-| `isRunning()`                       | boolean                      | Returns true if monitor is active.                                              |
-| `setContent(String)`                | void                         | Writes text to clipboard.                                                       |
-| `setContent(BufferedImage)`         | void                         | Writes image to clipboard.                                                      |
-| `setContent(List<File>)`            | void                         | Writes file list to clipboard.                                                  |
-| `getCurrentContent()`               | Optional\<ClipboardContent\> | Reads current clipboard content. Does not require `start()`.                    |
-| `getStats()`                        | Stats                        | Returns monitoring statistics.                                                  |
-| `addListener(ClipboardListener)`    | void                         | Adds listener dynamically.                                                      |
-| `removeListener(ClipboardListener)` | boolean                      | Removes listener. Returns true if removed.                                      |
-
-**Note**: `start()` must be called explicitly to begin monitoring. Methods `setContent()` and `getCurrentContent()` work without calling `start()`.
+**Validation**: `build()` throws `IllegalStateException` if detector or listener is missing. Throws `IllegalArgumentException` if debounce is negative.
 
 ---
 
-### ClipboardListener
+## Detectors
 
-Functional interface for receiving clipboard changes.
+Change detection strategies. Must provide one via `detector()`.
+
+| Detector            | Default Config | Description                  | Use Case                         |
+|---------------------|----------------|------------------------------|----------------------------------|
+| `PollingDetector`   | 200ms interval | Polls clipboard periodically | Reliable, works on all platforms |
+| `OwnershipDetector` | 50ms delay     | Uses ownership loss events   | Lower latency, less reliable     |
+
+### PollingDetector
+
+```java
+// Defaults (200ms)
+.detector(PollingDetector.defaults())
+
+// Custom interval
+.detector(PollingDetector.builder()
+    .interval(Duration.ofMillis(100))
+    .build())
+```
+
+**Builder Methods**:
+- `interval(Duration)` - Polling interval (must be positive, default: 200ms)
+- `build()` - Creates detector
+
+**Public Methods**:
+- `updateLastHash(String)` - Updates last known hash after write
+
+### OwnershipDetector
+
+```java
+// Defaults (50ms delay)
+.detector(OwnershipDetector.defaults())
+
+// Custom delay
+.detector(OwnershipDetector.builder()
+    .delay(Duration.ofMillis(100))
+    .build())
+```
+
+**Builder Methods**:
+- `delay(Duration)` - Delay before reading after ownership loss (default: 50ms)
+- `build()` - Creates detector
+
+**Public Methods**:
+- `retakeOwnership(Transferable)` - Retakes clipboard ownership after write
+
+---
+
+## ClipboardContent
+
+Sealed interface representing clipboard content at a moment in time. Immutable and thread-safe.
+
+**Implementations**: `TextContent`, `ImageContent`, `FilesContent`, `UnknownContent`
+
+### Common Methods
+
+| Method        | Returns                   | Description                        |
+|---------------|---------------------------|------------------------------------|
+| `type()`      | ContentType               | TEXT, IMAGE, FILES, or UNKNOWN     |
+| `hash()`      | String                    | SHA-256 hash for change detection  |
+| `timestamp()` | Instant                   | When content was captured          |
+| `size()`      | long                      | Content size in bytes              |
+| `asText()`    | Optional\<String\>        | Text content (empty if not TEXT)   |
+| `asImage()`   | Optional\<BufferedImage\> | Image content (empty if not IMAGE) |
+| `asFiles()`   | Optional\<List\<File\>\>  | File list (empty if not FILES)     |
+
+### TextContent
+
+Represents text clipboard content.
+
+**Constructor**: `TextContent(String text, String hash, Instant timestamp, long sizeBytes)`
+
+| Method        | Returns     | Description         |
+|---------------|-------------|---------------------|
+| `text()`      | String      | The text content    |
+| `hash()`      | String      | SHA-256 hash        |
+| `timestamp()` | Instant     | Capture timestamp   |
+| `sizeBytes()` | long        | UTF-8 encoded size  |
+| `type()`      | ContentType | Returns TEXT        |
+| `size()`      | long        | Same as sizeBytes() |
+
+### ImageContent
+
+Represents image clipboard content.
+
+**Constructors**:
+- `ImageContent(BufferedImage image, String hash, Instant timestamp, int width, int height)`
+- `ImageContent.of(BufferedImage image, String hash, Instant timestamp)` - Extracts dimensions
+
+| Method        | Returns       | Description                     |
+|---------------|---------------|---------------------------------|
+| `image()`     | BufferedImage | The image content               |
+| `width()`     | int           | Image width in pixels           |
+| `height()`    | int           | Image height in pixels          |
+| `hash()`      | String        | SHA-256 hash                    |
+| `timestamp()` | Instant       | Capture timestamp               |
+| `type()`      | ContentType   | Returns IMAGE                   |
+| `size()`      | long          | width × height × 4 (ARGB bytes) |
+
+### FilesContent
+
+Represents file list clipboard content.
+
+**Constructors**:
+- `FilesContent(List<File> files, String hash, Instant timestamp, long totalSize)`
+- `FilesContent.of(List<File> files, String hash, Instant timestamp)` - Calculates size
+
+| Method        | Returns      | Description             |
+|---------------|--------------|-------------------------|
+| `files()`     | List\<File\> | Immutable file list     |
+| `totalSize()` | long         | Total size of all files |
+| `hash()`      | String       | SHA-256 hash            |
+| `timestamp()` | Instant      | Capture timestamp       |
+| `type()`      | ContentType  | Returns FILES           |
+| `size()`      | long         | Same as totalSize()     |
+
+### UnknownContent
+
+Represents unknown/unsupported clipboard content.
+
+**Constructor**: `UnknownContent(String hash, Instant timestamp)`
+
+| Method        | Returns     | Description       |
+|---------------|-------------|-------------------|
+| `hash()`      | String      | SHA-256 hash      |
+| `timestamp()` | Instant     | Capture timestamp |
+| `type()`      | ContentType | Returns UNKNOWN   |
+| `size()`      | long        | Always returns 0  |
+
+---
+
+## ClipboardListener
+
+Functional interface for receiving clipboard change notifications.
 
 ```java
 @FunctionalInterface
@@ -76,89 +209,158 @@ public interface ClipboardListener {
 }
 ```
 
-**Usage as lambda:**
-```java
-.listener(content -> System.out.println(content.getType()))
-```
+**Thread Safety**: Callbacks invoked on virtual threads. Must be thread-safe if accessing shared state.
 
-**Usage with error handling:**
+**Usage**:
 ```java
+// Lambda
+.listener(content -> System.out.println(content.type()))
+
+// With error handling
 .listener(new ClipboardListener() {
     @Override
     public void onClipboardChange(ClipboardContent content) {
-        // handle content
+        processContent(content);
     }
     
     @Override
     public void onError(Exception error) {
-        // handle error
+        log.error("Clipboard error", error);
     }
 })
 ```
 
-**Important**: Callbacks are invoked on a dedicated thread. Implementations must be thread-safe if accessing shared resources.
-
 ---
 
-### ClipboardContent
-
-Immutable representation of clipboard content. Received in listener callbacks.
-
-#### Properties
-
-| Property    | Type               | Description                                              |
-|-------------|--------------------|----------------------------------------------------------|
-| `type`      | ContentType        | Content classification (TEXT, IMAGE, FILE_LIST, UNKNOWN) |
-| `timestamp` | Instant            | When content was captured                                |
-| `hash`      | String             | SHA-256 hash for change detection                        |
-| `size`      | long               | Content size in bytes                                    |
-| `flavors`   | List\<DataFlavor\> | Available data flavors                                   |
-
-#### Content Access Methods
-
-| Method         | Return                    | Description                    |
-|----------------|---------------------------|--------------------------------|
-| `asText()`     | Optional\<String\>        | Text content if type is TEXT   |
-| `asImage()`    | Optional\<BufferedImage\> | Image if type is IMAGE         |
-| `asFileList()` | Optional\<List\<File\>\>  | File list if type is FILE_LIST |
-| `asBytes()`    | byte[]                    | Raw bytes (defensive copy)     |
-
-#### Getter Methods
-
-| Method           | Return             |
-|------------------|--------------------|
-| `getType()`      | ContentType        |
-| `getTimestamp()` | Instant            |
-| `getHash()`      | String             |
-| `getSize()`      | long               |
-| `getFlavors()`   | List\<DataFlavor\> |
-
----
-
-### ContentType
+## ContentType
 
 Enum for content classification.
 
-| Value       | Description                     | Access Method  |
-|-------------|---------------------------------|----------------|
-| `TEXT`      | Plain text, HTML, RTF           | `asText()`     |
-| `IMAGE`     | PNG, JPEG, BMP as BufferedImage | `asImage()`    |
-| `FILE_LIST` | List of copied files            | `asFileList()` |
-| `UNKNOWN`   | Unsupported type                | `asBytes()`    |
+| Value     | Description                     | Access Method |
+|-----------|---------------------------------|---------------|
+| `TEXT`    | Plain text, HTML, RTF           | `asText()`    |
+| `IMAGE`   | PNG, JPEG, BMP as BufferedImage | `asImage()`   |
+| `FILES`   | List of files                   | `asFiles()`   |
+| `UNKNOWN` | Unsupported type                | none          |
 
 ---
 
-### Stats
+## Usage Examples
 
-Immutable record with monitoring statistics.
+### Basic Monitoring
 
 ```java
-public record Stats(
-    long totalChanges,    // Total clipboard changes detected
-    long totalErrors,     // Total errors occurred
-    Instant startTime,    // When monitoring started
-    Duration uptime       // Duration since start
-) { }
+try (ClipboardMonitor monitor = ClipboardMonitor.builder()
+        .detector(PollingDetector.defaults())
+        .listener(content -> System.out.println("Type: " + content.type()))
+        .build()) {
+    monitor.start();
+    Thread.sleep(60000); // monitor for 60s
+}
+```
+
+### Process by Type
+
+```java
+.listener(content -> {
+    switch (content.type()) {
+        case TEXT -> content.asText().ifPresent(text -> 
+            System.out.println("Text: " + text));
+        case IMAGE -> content.asImage().ifPresent(img -> 
+            System.out.println("Image: " + img.getWidth() + "x" + img.getHeight()));
+        case FILES -> content.asFiles().ifPresent(files -> 
+            files.forEach(f -> System.out.println("File: " + f.getName())));
+        case UNKNOWN -> System.out.println("Unknown content");
+    }
+})
+```
+
+### Write to Clipboard
+
+```java
+// Text
+monitor.write("Hello World");
+
+// Image
+BufferedImage image = ImageIO.read(new File("image.png"));
+monitor.write(image);
+
+// Files
+monitor.write(List.of(new File("doc.pdf"), new File("data.csv")));
+```
+
+### Read without Monitoring
+
+```java
+// Safe read (returns Optional)
+monitor.tryRead().ifPresent(content -> {
+    System.out.println("Current: " + content.type());
+});
+
+// Direct read (throws on error)
+try {
+    ClipboardContent content = monitor.read();
+    System.out.println("Type: " + content.type());
+} catch (ClipboardUnavailableException e) {
+    System.err.println("Clipboard locked");
+}
+```
+
+### Bidirectional Sync
+
+```java
+// Content written via write() won't trigger listener (prevents loops)
+ClipboardMonitor monitor = ClipboardMonitor.builder()
+    .detector(PollingDetector.defaults())
+    .listener(content -> sendToRemote(content))
+    .build();
+
+monitor.start();
+
+// Receive from remote - won't trigger listener
+String remoteText = receiveFromRemote();
+monitor.write(remoteText);
+```
+
+### Custom Configuration
+
+```java
+ClipboardMonitor monitor = ClipboardMonitor.builder()
+    .detector(PollingDetector.builder()
+        .interval(Duration.ofMillis(100))  // faster polling
+        .build())
+    .listener(this::handleChange)
+    .debounce(Duration.ofMillis(30))       // shorter debounce
+    .notifyOnStart(true)                    // get initial content
+    .build();
+```
+
+### Multiple Listeners
+
+```java
+ClipboardMonitor monitor = ClipboardMonitor.builder()
+    .detector(PollingDetector.defaults())
+    .listener(content -> logChange(content))
+    .listener(content -> syncToCloud(content))
+    .listener(content -> updateUI(content))
+    .build();
+```
+
+**Note**: Each listener runs in its own virtual thread. A slow or failing listener doesn't affect others.
+
+### Access Type-Specific Properties
+
+```java
+monitor.tryRead().ifPresent(content -> {
+    if (content instanceof TextContent text) {
+        System.out.println("Text length: " + text.sizeBytes());
+    } else if (content instanceof ImageContent image) {
+        System.out.println("Dimensions: " + image.width() + "x" + image.height());
+    } else if (content instanceof FilesContent files) {
+        System.out.println("File count: " + files.files().size());
+        System.out.println("Total size: " + files.totalSize());
+    }
+});
 ```
 
 ---
@@ -175,171 +377,12 @@ All exceptions extend `ClipboardException` (RuntimeException).
 
 ---
 
-## Usage Examples
-
-### Read/Write Only (No Monitoring)
-
-For scenarios where only reading or writing clipboard content is needed without monitoring changes:
-
-```java
-// Use a no-op listener since at least one is required
-try (ClipboardMonitor monitor = ClipboardMonitor.builder()
-        .listener(content -> {})
-        .build()) {
-    
-    // Read current content (no start() needed)
-    Optional<ClipboardContent> content = monitor.getCurrentContent();
-    content.ifPresent(c -> System.out.println("Type: " + c.getType()));
-    
-    // Write content (no start() needed)
-    monitor.setContent("Hello World");
-}
-```
-
-### Basic Monitoring
-
-```java
-try (ClipboardMonitor monitor = ClipboardMonitor.builder()
-        .listener(content -> System.out.println("Changed: " + content.getType()))
-        .build()) {
-    monitor.start();
-    Thread.sleep(60000); // Monitor for 60 seconds
-}
-```
-
-### Processing Different Content Types
-
-```java
-ClipboardMonitor monitor = ClipboardMonitor.builder()
-    .listener(content -> {
-        switch (content.getType()) {
-            case TEXT -> content.asText().ifPresent(text -> {
-                System.out.println("Text: " + text);
-            });
-            case IMAGE -> content.asImage().ifPresent(image -> {
-                System.out.println("Image: " + image.getWidth() + "x" + image.getHeight());
-            });
-            case FILE_LIST -> content.asFileList().ifPresent(files -> {
-                files.forEach(f -> System.out.println("File: " + f.getAbsolutePath()));
-            });
-            case UNKNOWN -> {
-                System.out.println("Unknown type, raw bytes: " + content.asBytes().length);
-            }
-        }
-    })
-    .build();
-
-monitor.start();
-```
-
-### Writing to Clipboard
-
-```java
-// Text
-monitor.setContent("Hello World");
-
-// Image
-BufferedImage image = ImageIO.read(new File("image.png"));
-monitor.setContent(image);
-
-// Files
-List<File> files = List.of(new File("doc1.pdf"), new File("doc2.pdf"));
-monitor.setContent(files);
-```
-
-### Bidirectional Synchronization
-
-```java
-// Content written via setContent() does NOT trigger listener (anti-loop protection)
-ClipboardMonitor monitor = ClipboardMonitor.builder()
-    .listener(content -> {
-        // Send to remote
-        sendToRemote(content);
-    })
-    .build();
-
-monitor.start();
-
-// Receive from remote - won't trigger listener
-String remoteContent = receiveFromRemote();
-monitor.setContent(remoteContent);
-```
-
-### Custom Configuration
-
-```java
-ClipboardMonitor monitor = ClipboardMonitor.builder()
-    .listener(this::handleChange)
-    .pollingInterval(Duration.ofMillis(250))  // Faster polling
-    .debounce(Duration.ofMillis(50))          // Shorter debounce
-    .ownershipEnabled(false)                   // Disable ownership detection
-    .notifyInitialContent(true)                // Get current content on start
-    .ignoreOwnChanges(false)                   // Notify all changes including own
-    .build();
-```
-
-### Multiple Listeners
-
-```java
-ClipboardMonitor monitor = ClipboardMonitor.builder()
-    .listener(content -> logChange(content))
-    .listener(content -> syncToCloud(content))
-    .listener(content -> updateUI(content))
-    .build();
-
-// Or add dynamically
-monitor.addListener(content -> additionalHandler(content));
-monitor.removeListener(existingListener);
-```
-
-### Reading Current Content
-
-```java
-Optional<ClipboardContent> current = monitor.getCurrentContent();
-current.ifPresent(content -> {
-    System.out.println("Current type: " + content.getType());
-});
-```
-
-### Monitoring Statistics
-
-```java
-Stats stats = monitor.getStats();
-System.out.println("Changes detected: " + stats.totalChanges());
-System.out.println("Errors: " + stats.totalErrors());
-System.out.println("Uptime: " + stats.uptime());
-```
-
-### Error Handling
-
-```java
-ClipboardMonitor monitor = ClipboardMonitor.builder()
-    .listener(new ClipboardListener() {
-        @Override
-        public void onClipboardChange(ClipboardContent content) {
-            processContent(content);
-        }
-        
-        @Override
-        public void onError(Exception error) {
-            if (error instanceof ClipboardUnavailableException) {
-                // Clipboard locked, retry later
-            } else {
-                log.error("Clipboard error", error);
-            }
-        }
-    })
-    .build();
-```
-
----
-
 ## Thread Safety
 
 - All public methods are thread-safe
-- Listeners are invoked on a dedicated callback thread
-- `ClipboardContent` is immutable and safe to share between threads
-- `Stats` is an immutable record
+- Listeners invoked on virtual threads (one per listener)
+- `ClipboardContent` implementations are immutable records
+- Safe to share content between threads
 
 ---
 
@@ -348,7 +391,21 @@ ClipboardMonitor monitor = ClipboardMonitor.builder()
 - `ClipboardMonitor` implements `AutoCloseable`
 - Always use try-with-resources or call `close()` explicitly
 - `close()` is idempotent (safe to call multiple times)
-- Daemon threads are used (won't prevent JVM shutdown)
+- Virtual threads used internally (lightweight, no thread pool needed)
+
+---
+
+## Logging
+
+Library uses SLF4J. Requires runtime implementation (e.g., `logback-classic`).
+
+**Log Levels**:
+- **DEBUG**: Internal flow, state changes, hash values
+- **INFO**: Lifecycle events (start, stop, configuration)
+- **WARN**: Recoverable issues, fallback behavior
+- **ERROR**: Failures with exception details
+
+**Configuration**: Set logger `dev.bxlab.clipboard.monitor` to desired level.
 
 ---
 
@@ -359,59 +416,12 @@ import dev.bxlab.clipboard.monitor.ClipboardMonitor;
 import dev.bxlab.clipboard.monitor.ClipboardContent;
 import dev.bxlab.clipboard.monitor.ClipboardListener;
 import dev.bxlab.clipboard.monitor.ContentType;
-import dev.bxlab.clipboard.monitor.internal.Stats;  // Internal API, accessed via getStats()
+import dev.bxlab.clipboard.monitor.TextContent;
+import dev.bxlab.clipboard.monitor.ImageContent;
+import dev.bxlab.clipboard.monitor.FilesContent;
+import dev.bxlab.clipboard.monitor.UnknownContent;
+import dev.bxlab.clipboard.monitor.detector.PollingDetector;
+import dev.bxlab.clipboard.monitor.detector.OwnershipDetector;
 import dev.bxlab.clipboard.monitor.exception.ClipboardException;
 import dev.bxlab.clipboard.monitor.exception.ClipboardUnavailableException;
-
-import java.awt.image.BufferedImage;
-import java.io.File;
-import java.time.Duration;
-import java.util.List;
-import java.util.Optional;
 ```
-
----
-
-## Logging Configuration
-
-The library uses SLF4J for logging. A logging implementation must be provided at runtime.
-
-### Gradle Dependency
-
-```gradle
-dependencies {
-    implementation 'dev.bxlab.clipboard:clipboard-monitor:1.0.0-SNAPSHOT'
-    runtimeOnly 'ch.qos.logback:logback-classic:1.5.22'  // Or any SLF4J implementation
-}
-```
-
-### Logback Configuration Example
-
-Create `src/main/resources/logback.xml`:
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<configuration>
-    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-        <encoder>
-            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
-        </encoder>
-    </appender>
-
-    <!-- Set to INFO to reduce verbosity, DEBUG for troubleshooting -->
-    <logger name="dev.bxlab.clipboard.monitor" level="INFO"/>
-
-    <root level="WARN">
-        <appender-ref ref="CONSOLE"/>
-    </root>
-</configuration>
-```
-
-### Log Levels
-
-| Level | Information Logged                            |
-|-------|-----------------------------------------------|
-| DEBUG | Internal flow, state changes, hash values     |
-| INFO  | Lifecycle events (start, stop, configuration) |
-| WARN  | Recoverable issues, fallback behavior         |
-| ERROR | Failures with exception details               |
