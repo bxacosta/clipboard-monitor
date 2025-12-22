@@ -1,5 +1,6 @@
 package dev.bxlab.clipboard.monitor;
 
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.awt.image.BufferedImage;
@@ -12,194 +13,200 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ClipboardContentTest {
 
-    @Test
-    void shouldCreateTextContent() {
-        String text = "Hello, World!";
+    @Nested
+    class TextContentTests {
 
-        ClipboardContent content = ClipboardContent.builder()
-                .textData(text)
-                .hash("abc123")
-                .size(text.length())
-                .build();
+        @Test
+        void shouldCreateWithAllFields() {
+            String text = "Hello, World!";
+            Instant now = Instant.now();
 
-        assertThat(content.getType()).isEqualTo(ContentType.TEXT);
-        assertThat(content.asText()).contains(text);
-        assertThat(content.asImage()).isEmpty();
-        assertThat(content.asFileList()).isEmpty();
-        assertThat(content.getHash()).isEqualTo("abc123");
-        assertThat(content.getSize()).isEqualTo(text.length());
-        assertThat(content.getTimestamp()).isNotNull();
+            TextContent content = new TextContent(text, "abc123", now, 13);
+
+            assertThat(content.type()).isEqualTo(ContentType.TEXT);
+            assertThat(content.text()).isEqualTo(text);
+            assertThat(content.hash()).isEqualTo("abc123");
+            assertThat(content.timestamp()).isEqualTo(now);
+            assertThat(content.size()).isEqualTo(13);
+        }
+
+        @Test
+        void shouldFailWithNullText() {
+            Instant timestamp = Instant.now();
+
+            assertThatThrownBy(() -> new TextContent(null, "hash", timestamp, 0))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("text");
+        }
+
+        @Test
+        void shouldFailWithNullHash() {
+            Instant timestamp = Instant.now();
+
+            assertThatThrownBy(() -> new TextContent("test", null, timestamp, 4))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("hash");
+        }
+
+        @Test
+        void shouldFailWithNullTimestamp() {
+            assertThatThrownBy(() -> new TextContent("test", "hash", null, 4))
+                    .isInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("timestamp");
+        }
+
+        @Test
+        void shouldFailWithNegativeSizeBytes() {
+            Instant timestamp = Instant.now();
+
+            assertThatThrownBy(() -> new TextContent("test", "hash", timestamp, -1))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("sizeBytes");
+        }
+
+        @Test
+        void shouldHaveTruncatedHashInToString() {
+            TextContent content = new TextContent("test", "abcdefghijk", Instant.now(), 4);
+
+            assertThat(content.toString())
+                    .contains("TextContent")
+                    .contains("abcdefgh...");
+        }
     }
 
-    @Test
-    void shouldCreateImageContent() {
-        BufferedImage image = new BufferedImage(100, 100, BufferedImage.TYPE_INT_ARGB);
+    @Nested
+    class ImageContentTests {
 
-        ClipboardContent content = ClipboardContent.builder()
-                .imageData(image)
-                .hash("def456")
-                .size(40000)
-                .build();
+        @Test
+        void shouldCreateWithCalculatedSize() {
+            BufferedImage image = new BufferedImage(100, 100, BufferedImage.TYPE_INT_ARGB);
+            Instant now = Instant.now();
 
-        assertThat(content.getType()).isEqualTo(ContentType.IMAGE);
-        assertThat(content.asText()).isEmpty();
-        assertThat(content.asImage()).contains(image);
-        assertThat(content.asFileList()).isEmpty();
+            ImageContent content = ImageContent.of(image, "def456", now);
+
+            assertThat(content.type()).isEqualTo(ContentType.IMAGE);
+            assertThat(content.image()).isEqualTo(image);
+            assertThat(content.width()).isEqualTo(100);
+            assertThat(content.height()).isEqualTo(100);
+            assertThat(content.size()).isEqualTo(100 * 100 * 4L);
+        }
+
+        @Test
+        void shouldFailWithZeroWidth() {
+            BufferedImage image = new BufferedImage(100, 100, BufferedImage.TYPE_INT_ARGB);
+            Instant timestamp = Instant.now();
+
+            assertThatThrownBy(() -> new ImageContent(image, "hash", timestamp, 0, 100))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("width");
+        }
+
+        @Test
+        void shouldFailWithNegativeHeight() {
+            BufferedImage image = new BufferedImage(100, 100, BufferedImage.TYPE_INT_ARGB);
+            Instant timestamp = Instant.now();
+
+            assertThatThrownBy(() -> new ImageContent(image, "hash", timestamp, 100, -1))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("height");
+        }
     }
 
-    @Test
-    void shouldCreateFileListContent() {
-        List<File> files = List.of(new File("test.txt"), new File("test2.txt"));
+    @Nested
+    class FilesContentTests {
 
-        ClipboardContent content = ClipboardContent.builder()
-                .fileListData(files)
-                .hash("ghi789")
-                .size(0)
-                .build();
+        @Test
+        void shouldCreateWithExplicitSize() {
+            List<File> files = List.of(new File("test.txt"), new File("test2.txt"));
+            Instant now = Instant.now();
 
-        assertThat(content.getType()).isEqualTo(ContentType.FILE_LIST);
-        assertThat(content.asText()).isEmpty();
-        assertThat(content.asImage()).isEmpty();
-        assertThat(content.asFileList()).contains(files);
+            FilesContent content = new FilesContent(files, "ghi789", now, 1024);
+
+            assertThat(content.type()).isEqualTo(ContentType.FILES);
+            assertThat(content.files()).containsExactlyElementsOf(files);
+            assertThat(content.totalSize()).isEqualTo(1024);
+        }
+
+        @Test
+        void shouldCreateWithCalculatedSize() {
+            List<File> files = List.of(new File("test.txt"));
+
+            FilesContent content = FilesContent.of(files, "hash", Instant.now());
+
+            assertThat(content.files()).hasSize(1);
+            assertThat(content.totalSize()).isGreaterThanOrEqualTo(0);
+        }
+
+        @Test
+        void shouldMakeDefensiveCopyOfFiles() {
+            List<File> files = new java.util.ArrayList<>();
+            files.add(new File("test.txt"));
+
+            FilesContent content = new FilesContent(files, "hash", Instant.now(), 100);
+
+            files.add(new File("test2.txt"));
+
+            assertThat(content.files()).hasSize(1);
+        }
+
+        @Test
+        void shouldFailWithNegativeTotalSize() {
+            List<File> files = List.of(new File("test.txt"));
+            Instant timestamp = Instant.now();
+
+            assertThatThrownBy(() -> new FilesContent(files, "hash", timestamp, -1))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("totalSize");
+        }
     }
 
-    @Test
-    void shouldCreateUnknownContent() {
-        ClipboardContent content = ClipboardContent.builder()
-                .unknownType()
-                .hash("unknown123")
-                .size(0)
-                .build();
+    @Nested
+    class UnknownContentTests {
 
-        assertThat(content.getType()).isEqualTo(ContentType.UNKNOWN);
-        assertThat(content.asText()).isEmpty();
-        assertThat(content.asImage()).isEmpty();
-        assertThat(content.asFileList()).isEmpty();
+        @Test
+        void shouldCreateWithHashAndTimestamp() {
+            Instant now = Instant.now();
+
+            UnknownContent content = new UnknownContent("unknown123", now);
+
+            assertThat(content.type()).isEqualTo(ContentType.UNKNOWN);
+            assertThat(content.hash()).isEqualTo("unknown123");
+            assertThat(content.timestamp()).isEqualTo(now);
+            assertThat(content.size()).isZero();
+        }
     }
 
-    @Test
-    void shouldUseCustomTimestamp() {
-        Instant customTime = Instant.parse("2025-01-01T00:00:00Z");
+    @Nested
+    class ConvenienceMethodsTests {
 
-        ClipboardContent content = ClipboardContent.builder()
-                .textData("test")
-                .hash("test")
-                .size(4)
-                .timestamp(customTime)
-                .build();
+        @Test
+        void shouldReturnOptionalForText() {
+            ClipboardContent textContent = new TextContent("hello", "hash", Instant.now(), 5);
+            ClipboardContent imageContent = ImageContent.of(
+                    new BufferedImage(10, 10, BufferedImage.TYPE_INT_ARGB), "hash", Instant.now());
 
-        assertThat(content.getTimestamp()).isEqualTo(customTime);
-    }
+            assertThat(textContent.asText()).contains("hello");
+            assertThat(imageContent.asText()).isEmpty();
+        }
 
-    @Test
-    void shouldReturnBytesForText() {
-        String text = "Test text";
+        @Test
+        void shouldReturnOptionalForImage() {
+            ClipboardContent textContent = new TextContent("hello", "hash", Instant.now(), 5);
+            ClipboardContent imageContent = ImageContent.of(
+                    new BufferedImage(10, 10, BufferedImage.TYPE_INT_ARGB), "hash", Instant.now());
 
-        ClipboardContent content = ClipboardContent.builder()
-                .textData(text)
-                .hash("test")
-                .size(text.length())
-                .build();
+            assertThat(textContent.asImage()).isEmpty();
+            assertThat(imageContent.asImage()).isPresent();
+        }
 
-        byte[] bytes = content.asBytes();
-        assertThat(new String(bytes)).isEqualTo(text);
-    }
+        @Test
+        void shouldReturnOptionalForFiles() {
+            ClipboardContent textContent = new TextContent("hello", "hash", Instant.now(), 5);
+            ClipboardContent filesContent = FilesContent.of(
+                    List.of(new File("test.txt")), "hash", Instant.now());
 
-    @Test
-    void shouldReturnEmptyBytesForImage() {
-        BufferedImage image = new BufferedImage(10, 10, BufferedImage.TYPE_INT_ARGB);
-
-        ClipboardContent content = ClipboardContent.builder()
-                .imageData(image)
-                .hash("test")
-                .size(400)
-                .build();
-
-        byte[] bytes = content.asBytes();
-        assertThat(bytes).isEmpty();
-    }
-
-    @Test
-    void shouldBeEqualByHash() {
-        ClipboardContent content1 = ClipboardContent.builder()
-                .textData("text1")
-                .hash("samehash")
-                .size(5)
-                .build();
-
-        ClipboardContent content2 = ClipboardContent.builder()
-                .textData("text2")
-                .hash("samehash")
-                .size(5)
-                .build();
-
-        assertThat(content1).isEqualTo(content2);
-        assertThat(content1.hashCode()).hasSameHashCodeAs(content2.hashCode());
-    }
-
-    @Test
-    void shouldNotBeEqualWithDifferentHash() {
-        ClipboardContent content1 = ClipboardContent.builder()
-                .textData("text")
-                .hash("hash1")
-                .size(4)
-                .build();
-
-        ClipboardContent content2 = ClipboardContent.builder()
-                .textData("text")
-                .hash("hash2")
-                .size(4)
-                .build();
-
-        assertThat(content1).isNotEqualTo(content2);
-    }
-
-    @Test
-    void shouldHaveReadableToString() {
-        ClipboardContent content = ClipboardContent.builder()
-                .textData("test")
-                .hash("abcdefghijk")
-                .size(4)
-                .build();
-
-        String str = content.toString();
-        assertThat(str)
-                .contains("TEXT")
-                .contains("abcdefgh...")
-                .contains("size=4");
-    }
-
-    @Test
-    void shouldFailWithNullType() {
-        ClipboardContent.Builder builder = ClipboardContent.builder()
-                .hash("test")
-                .size(0);
-
-        assertThatThrownBy(builder::build)
-                .isInstanceOf(NullPointerException.class)
-                .hasMessageContaining("type must be set");
-    }
-
-    @Test
-    void shouldFailWithNullHash() {
-        ClipboardContent.Builder builder = ClipboardContent.builder()
-                .textData("test")
-                .size(0);
-
-        assertThatThrownBy(builder::build)
-                .isInstanceOf(NullPointerException.class)
-                .hasMessageContaining("hash must be set");
-    }
-
-    @Test
-    void shouldEnforceTypeDataConsistencyByDesign() {
-        ClipboardContent content = ClipboardContent.builder()
-                .textData("test")
-                .hash("hash")
-                .size(4)
-                .build();
-
-        assertThat(content.getType()).isEqualTo(ContentType.TEXT);
-        assertThat(content.asText()).contains("test");
+            assertThat(textContent.asFiles()).isEmpty();
+            assertThat(filesContent.asFiles()).isPresent();
+        }
     }
 }

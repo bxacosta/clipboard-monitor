@@ -1,7 +1,9 @@
 package dev.bxlab.clipboard.monitor;
 
+import dev.bxlab.clipboard.monitor.detector.PollingDetector;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.awt.GraphicsEnvironment;
@@ -21,252 +23,254 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class ClipboardMonitorTest {
 
-    private ClipboardMonitor monitor;
-    private Clipboard systemClipboard;
+    @Nested
+    class BuilderValidationTests {
 
-    @BeforeEach
-    void setUp() {
-        assumeFalse(GraphicsEnvironment.isHeadless(),
-                "Skipping test in headless environment");
+        @Test
+        void shouldRequireDetector() {
+            ClipboardMonitor.Builder builder = ClipboardMonitor.builder()
+                    .listener(content -> {
+                    });
 
-        try {
-            systemClipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
-        } catch (Exception e) {
-            assumeTrue(false, "Clipboard not available: " + e.getMessage());
+            assertThatThrownBy(builder::build)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("detector");
         }
-    }
 
-    @AfterEach
-    void tearDown() {
-        if (monitor != null) {
+        @Test
+        void shouldRequireAtLeastOneListener() {
+            ClipboardMonitor.Builder builder = ClipboardMonitor.builder()
+                    .detector(PollingDetector.defaults());
+
+            assertThatThrownBy(builder::build)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("listener");
+        }
+
+        @Test
+        void shouldRejectNegativeDebounce() {
+            ClipboardMonitor.Builder builder = ClipboardMonitor.builder()
+                    .detector(PollingDetector.defaults())
+                    .listener(content -> {
+                    })
+                    .debounce(Duration.ofMillis(-1));
+
+            assertThatThrownBy(builder::build)
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("negative");
+        }
+
+        @Test
+        void shouldBuildWithValidConfiguration() {
+            ClipboardMonitor monitor = ClipboardMonitor.builder()
+                    .detector(PollingDetector.builder()
+                            .interval(Duration.ofMillis(300))
+                            .build())
+                    .listener(content -> {
+                    })
+                    .debounce(Duration.ofMillis(150))
+                    .notifyOnStart(true)
+                    .build();
+
+            assertThat(monitor).isNotNull();
             monitor.close();
-            monitor = null;
         }
     }
 
-    @Test
-    void shouldBuildWithListener() {
-        AtomicReference<ClipboardContent> received = new AtomicReference<>();
+    @Nested
+    class LifecycleTests {
 
-        monitor = ClipboardMonitor.builder()
-                .listener(received::set)
-                .build();
+        private ClipboardMonitor monitor;
 
-        assertThat(monitor).isNotNull();
-        assertThat(monitor.isRunning()).isFalse();
+        @AfterEach
+        void tearDown() {
+            if (monitor != null) {
+                monitor.close();
+            }
+        }
+
+        @Test
+        void shouldStartAndStop() {
+            monitor = ClipboardMonitor.builder()
+                    .detector(PollingDetector.defaults())
+                    .listener(content -> {
+                    })
+                    .build();
+
+            assertThat(monitor.isRunning()).isFalse();
+
+            monitor.start();
+            assertThat(monitor.isRunning()).isTrue();
+
+            monitor.close();
+            assertThat(monitor.isRunning()).isFalse();
+        }
+
+        @Test
+        void shouldBeIdempotentOnMultipleStarts() {
+            monitor = ClipboardMonitor.builder()
+                    .detector(PollingDetector.defaults())
+                    .listener(content -> {
+                    })
+                    .build();
+
+            monitor.start();
+            monitor.start();
+            monitor.start();
+
+            assertThat(monitor.isRunning()).isTrue();
+        }
+
+        @Test
+        void shouldBeIdempotentOnMultipleCloses() {
+            monitor = ClipboardMonitor.builder()
+                    .detector(PollingDetector.defaults())
+                    .listener(content -> {
+                    })
+                    .build();
+
+            monitor.start();
+            monitor.close();
+            monitor.close();
+            monitor.close();
+
+            assertThat(monitor.isRunning()).isFalse();
+        }
+
+        @Test
+        void shouldThrowOnStartAfterClose() {
+            monitor = ClipboardMonitor.builder()
+                    .detector(PollingDetector.defaults())
+                    .listener(content -> {
+                    })
+                    .build();
+
+            monitor.start();
+            monitor.close();
+
+            assertThatThrownBy(monitor::start)
+                    .isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("closed");
+        }
     }
 
-    @Test
-    void shouldRequireAtLeastOneListener() {
-        ClipboardMonitor.ClipboardMonitorBuilder builder = ClipboardMonitor.builder();
+    @Nested
+    class IntegrationTests {
 
-        assertThatThrownBy(builder::build)
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("listener");
-    }
+        private ClipboardMonitor monitor;
+        private Clipboard systemClipboard;
 
-    @Test
-    void shouldStartAndClose() {
-        monitor = ClipboardMonitor.builder()
-                .listener(content -> {
-                })
-                .build();
+        @BeforeEach
+        void setUp() {
+            assumeFalse(GraphicsEnvironment.isHeadless(),
+                    "Skipping test in headless environment");
 
-        assertThat(monitor.isRunning()).isFalse();
+            try {
+                systemClipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+            } catch (Exception e) {
+                assumeTrue(false, "Clipboard not available: " + e.getMessage());
+            }
+        }
 
-        monitor.start();
-        assertThat(monitor.isRunning()).isTrue();
+        @AfterEach
+        void tearDown() {
+            if (monitor != null) {
+                monitor.close();
+            }
+        }
 
-        monitor.close();
-        assertThat(monitor.isRunning()).isFalse();
-    }
+        @Test
+        void shouldDetectTextChange() throws InterruptedException {
+            CountDownLatch latch = new CountDownLatch(1);
+            AtomicReference<ClipboardContent> received = new AtomicReference<>();
 
-    @Test
-    void shouldDetectTextChange() throws InterruptedException {
-        CountDownLatch latch = new CountDownLatch(1);
-        AtomicReference<ClipboardContent> received = new AtomicReference<>();
+            monitor = ClipboardMonitor.builder()
+                    .detector(PollingDetector.builder()
+                            .interval(Duration.ofMillis(100))
+                            .build())
+                    .listener(content -> {
+                        received.set(content);
+                        latch.countDown();
+                    })
+                    .debounce(Duration.ofMillis(50))
+                    .build();
 
-        monitor = ClipboardMonitor.builder()
-                .listener(content -> {
-                    received.set(content);
-                    latch.countDown();
-                })
-                .pollingInterval(Duration.ofMillis(100))
-                .debounce(Duration.ofMillis(50))
-                .ownershipEnabled(false)
-                .build();
+            monitor.start();
+            await().atMost(1, TimeUnit.SECONDS).until(monitor::isRunning);
 
-        monitor.start();
+            String testText = "Test clipboard content " + System.currentTimeMillis();
+            systemClipboard.setContents(new StringSelection(testText), null);
 
-        await().atMost(1, TimeUnit.SECONDS).until(monitor::isRunning);
+            boolean notified = latch.await(3, TimeUnit.SECONDS);
 
-        String testText = "Test clipboard content " + System.currentTimeMillis();
-        systemClipboard.setContents(new StringSelection(testText), null);
+            assertThat(notified).isTrue();
+            assertThat(received.get()).isNotNull();
+            assertThat(received.get().type()).isEqualTo(ContentType.TEXT);
+            assertThat(received.get().asText()).contains(testText);
+        }
 
-        boolean notified = latch.await(3, TimeUnit.SECONDS);
+        @Test
+        void shouldNotNotifyForOwnContent() throws InterruptedException {
+            CountDownLatch latch = new CountDownLatch(1);
 
-        assertThat(notified).isTrue();
-        assertThat(received.get()).isNotNull();
-        assertThat(received.get().getType()).isEqualTo(ContentType.TEXT);
-        assertThat(received.get().asText()).contains(testText);
-    }
+            monitor = ClipboardMonitor.builder()
+                    .detector(PollingDetector.builder()
+                            .interval(Duration.ofMillis(100))
+                            .build())
+                    .listener(content -> latch.countDown())
+                    .debounce(Duration.ofMillis(50))
+                    .build();
 
-    @Test
-    void shouldNotNotifyForOwnContent() throws InterruptedException {
-        CountDownLatch latch = new CountDownLatch(1);
+            monitor.start();
+            await().atMost(1, TimeUnit.SECONDS).until(monitor::isRunning);
 
-        monitor = ClipboardMonitor.builder()
-                .listener(content -> latch.countDown())
-                .pollingInterval(Duration.ofMillis(100))
-                .debounce(Duration.ofMillis(50))
-                .build();
+            monitor.write("Content set by monitor");
 
-        monitor.start();
+            boolean notified = latch.await(1, TimeUnit.SECONDS);
 
-        await().atMost(1, TimeUnit.SECONDS).until(monitor::isRunning);
+            assertThat(notified).isFalse();
+        }
 
-        monitor.setContent("Content set by monitor");
+        @Test
+        void shouldReadCurrentContent() {
+            monitor = ClipboardMonitor.builder()
+                    .detector(PollingDetector.defaults())
+                    .listener(content -> {
+                    })
+                    .build();
 
-        boolean notified = latch.await(1, TimeUnit.SECONDS);
+            String testText = "Current content test " + System.currentTimeMillis();
+            systemClipboard.setContents(new StringSelection(testText), null);
 
-        assertThat(notified).isFalse();
-    }
+            var content = monitor.tryRead();
 
-    @Test
-    void shouldReadCurrentContent() {
-        monitor = ClipboardMonitor.builder()
-                .listener(content -> {
-                })
-                .build();
+            assertThat(content).isPresent();
+            assertThat(content.get().type()).isEqualTo(ContentType.TEXT);
+            assertThat(content.get().asText()).contains(testText);
+        }
 
-        String testText = "Current content test";
-        systemClipboard.setContents(new StringSelection(testText), null);
+        @Test
+        void shouldSupportMultipleListeners() throws InterruptedException {
+            CountDownLatch latch = new CountDownLatch(2);
 
-        var content = monitor.getCurrentContent();
+            monitor = ClipboardMonitor.builder()
+                    .detector(PollingDetector.builder()
+                            .interval(Duration.ofMillis(100))
+                            .build())
+                    .listener(content -> latch.countDown())
+                    .listener(content -> latch.countDown())
+                    .debounce(Duration.ofMillis(50))
+                    .build();
 
-        assertThat(content).isPresent();
-        assertThat(content.get().getType()).isEqualTo(ContentType.TEXT);
-        assertThat(content.get().asText()).contains(testText);
-    }
+            monitor.start();
+            await().atMost(1, TimeUnit.SECONDS).until(monitor::isRunning);
 
-    @Test
-    void shouldTrackStats() throws InterruptedException {
-        CountDownLatch latch = new CountDownLatch(2);
+            String testText = "Multi-listener test " + System.currentTimeMillis();
+            systemClipboard.setContents(new StringSelection(testText), null);
 
-        monitor = ClipboardMonitor.builder()
-                .listener(content -> latch.countDown())
-                .pollingInterval(Duration.ofMillis(100))
-                .debounce(Duration.ofMillis(50))
-                .ownershipEnabled(false)
-                .build();
+            boolean completed = latch.await(3, TimeUnit.SECONDS);
 
-        monitor.start();
-
-        await().atMost(1, TimeUnit.SECONDS).until(monitor::isRunning);
-
-        systemClipboard.setContents(new StringSelection("Change 1 " + System.nanoTime()), null);
-
-        await().pollDelay(200, TimeUnit.MILLISECONDS)
-                .atMost(1, TimeUnit.SECONDS)
-                .until(() -> true);
-
-        systemClipboard.setContents(new StringSelection("Change 2 " + System.nanoTime()), null);
-
-        boolean completed = latch.await(5, TimeUnit.SECONDS);
-
-        assertThat(completed).isTrue();
-        var stats = monitor.getStats();
-        assertThat(stats.totalChanges()).isGreaterThanOrEqualTo(2);
-        assertThat(stats.uptime().toMillis()).isGreaterThan(0);
-    }
-
-    @Test
-    void shouldAcceptCustomConfiguration() {
-        monitor = ClipboardMonitor.builder()
-                .listener(content -> {
-                })
-                .pollingInterval(Duration.ofMillis(300))
-                .debounce(Duration.ofMillis(150))
-                .ownershipEnabled(false)
-                .ignoreOwnChanges(false)
-                .build();
-
-        assertThat(monitor).isNotNull();
-    }
-
-    @Test
-    void shouldRejectInvalidPollingInterval() {
-        ClipboardMonitor.ClipboardMonitorBuilder builder1 = ClipboardMonitor.builder()
-                .listener(content -> {
-                })
-                .pollingInterval(Duration.ZERO);
-
-        assertThatThrownBy(builder1::build)
-                .isInstanceOf(IllegalArgumentException.class);
-
-        ClipboardMonitor.ClipboardMonitorBuilder builder2 = ClipboardMonitor.builder()
-                .listener(content -> {
-                })
-                .pollingInterval(Duration.ofMillis(-100));
-
-        assertThatThrownBy(builder2::build)
-                .isInstanceOf(IllegalArgumentException.class);
-    }
-
-    @Test
-    void shouldRejectInvalidDebounce() {
-        ClipboardMonitor.ClipboardMonitorBuilder builder = ClipboardMonitor.builder()
-                .listener(content -> {
-                })
-                .debounce(Duration.ofMillis(-1));
-
-        assertThatThrownBy(builder::build)
-                .isInstanceOf(IllegalArgumentException.class);
-    }
-
-    @Test
-    void shouldAddAndRemoveListeners() {
-        AtomicReference<Integer> callCount = new AtomicReference<>(0);
-
-        ClipboardListener listener1 = content -> callCount.updateAndGet(v -> v + 1);
-        ClipboardListener listener2 = content -> callCount.updateAndGet(v -> v + 10);
-
-        monitor = ClipboardMonitor.builder()
-                .listener(listener1)
-                .build();
-
-        monitor.addListener(listener2);
-
-        assertThat(monitor.removeListener(listener2)).isTrue();
-        assertThat(monitor.removeListener(listener2)).isFalse();
-    }
-
-    @Test
-    void shouldBeIdempotentOnMultipleStarts() {
-        monitor = ClipboardMonitor.builder()
-                .listener(content -> {
-                })
-                .build();
-
-        monitor.start();
-        monitor.start();
-        monitor.start();
-
-        assertThat(monitor.isRunning()).isTrue();
-    }
-
-    @Test
-    void shouldBeIdempotentOnMultipleCloses() {
-        monitor = ClipboardMonitor.builder()
-                .listener(content -> {
-                })
-                .build();
-
-        monitor.start();
-        monitor.close();
-        monitor.close();
-        monitor.close();
-
-        assertThat(monitor.isRunning()).isFalse();
+            assertThat(completed).isTrue();
+        }
     }
 }
