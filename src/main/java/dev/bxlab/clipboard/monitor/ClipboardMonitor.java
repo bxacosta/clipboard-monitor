@@ -90,8 +90,9 @@ public final class ClipboardMonitor implements AutoCloseable {
     private final Object debounceLock = new Object();
 
     private final AtomicReference<String> lastNotifiedHash = new AtomicReference<>("");
-    private volatile ClipboardContent pendingContent = null;
-    private volatile long pendingStartNanos = 0;
+
+    private ClipboardContent pendingContent = null;
+    private long pendingStartNanos = 0;
 
     private final AtomicReference<Thread> watchThread = new AtomicReference<>();
 
@@ -150,7 +151,7 @@ public final class ClipboardMonitor implements AutoCloseable {
                 .start(this::watchLoop);
         watchThread.set(thread);
 
-        log.info("ClipboardMonitor started with {} detector", detector.getClass().getSimpleName());
+        log.debug("ClipboardMonitor started with {} detector", detector.getClass().getSimpleName());
     }
 
     @Override
@@ -170,7 +171,7 @@ public final class ClipboardMonitor implements AutoCloseable {
 
         ownContentTracker.clear();
 
-        log.info("ClipboardMonitor closed");
+        log.debug("ClipboardMonitor closed");
     }
 
     public boolean isRunning() {

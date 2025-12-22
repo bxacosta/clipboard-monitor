@@ -99,7 +99,7 @@ public final class PollingDetector implements ChangeDetector {
                 .name("clipboard-polling-detector")
                 .start(this::pollLoop));
 
-        log.info("PollingDetector started with interval: {}ms", interval.toMillis());
+        log.debug("PollingDetector started with interval: {}ms", interval.toMillis());
     }
 
     @Override
@@ -113,7 +113,7 @@ public final class PollingDetector implements ChangeDetector {
             thread.interrupt();
         }
 
-        log.info("PollingDetector stopped");
+        log.debug("PollingDetector stopped");
     }
 
     @Override

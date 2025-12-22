@@ -103,7 +103,7 @@ public final class OwnershipDetector implements ChangeDetector, ClipboardOwner {
 
         this.clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
         takeOwnership();
-        log.info("OwnershipDetector started with delay: {}ms", delay.toMillis());
+        log.debug("OwnershipDetector started with delay: {}ms", delay.toMillis());
     }
 
     @Override
@@ -112,7 +112,7 @@ public final class OwnershipDetector implements ChangeDetector, ClipboardOwner {
             return;
         }
 
-        log.info("OwnershipDetector stopped");
+        log.debug("OwnershipDetector stopped");
     }
 
     @Override
