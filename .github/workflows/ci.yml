@@ -37,8 +37,13 @@ jobs:
       - name: Validate Gradle wrapper
         uses: gradle/actions/wrapper-validation@v4
 
+      - name: Setup Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+
       - name: Run tests
-        run: ./gradlew test
+        run: xvfb-run -a ./gradlew test
 
       - name: Generate test report
         uses: dorny/test-reporter@v2
