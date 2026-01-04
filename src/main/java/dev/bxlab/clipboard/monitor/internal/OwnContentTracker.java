@@ -59,8 +59,7 @@ public final class OwnContentTracker {
                     }
                     // Also remove if TTL expired
                     if ((System.nanoTime() - eldest.getValue()) > TTL_NANOS) {
-                        log.debug("TTL eviction: removing hash {} (expired)",
-                                TextUtils.truncate(eldest.getKey()));
+                        log.debug("TTL eviction: removing hash {} (expired)", TextUtils.truncate(eldest.getKey()));
                         return true;
                     }
                     return false;
@@ -117,13 +116,11 @@ public final class OwnContentTracker {
         if (ageNanos > TTL_NANOS) {
             // Lazy cleanup: remove expired entry
             recentHashes.remove(hash);
-            log.debug("Hash expired and removed: {} (age: {}ms)",
-                    TextUtils.truncate(hash), ageNanos / 1_000_000);
+            log.debug("Hash expired and removed: {} (age: {}ms)", TextUtils.truncate(hash), ageNanos / 1_000_000);
             return false;
         }
 
-        log.debug("Hash is own content: {} (age: {}ms)",
-                TextUtils.truncate(hash), ageNanos / 1_000_000);
+        log.debug("Hash is own content: {} (age: {}ms)", TextUtils.truncate(hash), ageNanos / 1_000_000);
         return true;
     }
 

@@ -1,6 +1,6 @@
 # Clipboard Monitor - Code Conventions
 
-Java 17+ | Package: `dev.bxlab.clipboard.monitor` | Gradle 9.x + Lombok
+Java 21 | Package: `dev.bxlab.clipboard.monitor` | Gradle 9.x + Lombok
 
 ```bash
 ./gradlew clean build    # compile, test, package

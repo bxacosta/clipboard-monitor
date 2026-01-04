@@ -1,16 +1,53 @@
 # Clipboard Monitor API Reference
 
-**Java 21** | `dev.bxlab.clipboard.monitor` | **v2.0.0-SNAPSHOT**
+**Java 21** | `dev.bxlab.clipboard.monitor` | **v1.0.0**
 
 System clipboard monitoring library. Supports text, images, and file lists.
 
 ## Installation
 
+This library is available through **GitLab Package Registry** (public access, no authentication required).
+
+### Gradle
+
 ```gradle
+repositories {
+    mavenCentral()
+    maven {
+        name = "GitLab"
+        url = uri("https://gitlab.com/api/v4/projects/70108742/packages/maven")
+    }
+}
+
 dependencies {
-    implementation 'dev.bxlab.clipboard:clipboard-monitor:2.0.0-SNAPSHOT'
+    implementation 'dev.bxlab.clipboard:clipboard-monitor:1.0.0'
     runtimeOnly 'ch.qos.logback:logback-classic:1.5.22'  // SLF4J implementation required
 }
+```
+
+### Maven
+
+```xml
+<repositories>
+    <repository>
+        <id>gitlab</id>
+        <url>https://gitlab.com/api/v4/projects/70108742/packages/maven</url>
+    </repository>
+</repositories>
+
+<dependencies>
+    <dependency>
+        <groupId>dev.bxlab.clipboard</groupId>
+        <artifactId>clipboard-monitor</artifactId>
+        <version>1.0.0</version>
+    </dependency>
+    <dependency>
+        <groupId>ch.qos.logback</groupId>
+        <artifactId>logback-classic</artifactId>
+        <version>1.5.22</version>
+        <scope>runtime</scope>
+    </dependency>
+</dependencies>
 ```
 
 ## Quick Start
