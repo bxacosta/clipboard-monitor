@@ -6,6 +6,7 @@ import dev.bxlab.clipboard.monitor.content.FilesContent;
 import dev.bxlab.clipboard.monitor.content.ImageContent;
 import dev.bxlab.clipboard.monitor.content.TextContent;
 import dev.bxlab.clipboard.monitor.content.UnknownContent;
+import dev.bxlab.clipboard.monitor.util.TextUtils;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
@@ -76,7 +77,7 @@ class ClipboardContentTest {
 
             assertThat(content.toString())
                     .contains("TextContent")
-                    .contains("abcdefgh...");
+                    .contains(TextUtils.truncate(content.hash()));
         }
     }
 
