@@ -33,7 +33,6 @@ try (ClipboardMonitor monitor = ClipboardMonitor.builder()
 ## Requirements
 
 - Java 21+
-- SLF4J API for logging
 
 ## Installation
 
@@ -52,11 +51,6 @@ repositories {
 
 dependencies {
     implementation 'dev.bxlab.clipboard:clipboard-monitor:1.0.0'
-
-    // SLF4J implementation (choose one)
-    implementation 'ch.qos.logback:logback-classic:1.5.22'
-    // or
-    implementation 'org.slf4j:slf4j-simple:2.0.16'
 }
 ```
 
@@ -76,17 +70,11 @@ dependencies {
         <artifactId>clipboard-monitor</artifactId>
         <version>1.0.0</version>
     </dependency>
-
-    <!-- SLF4J implementation (choose one) -->
-    <dependency>
-        <groupId>ch.qos.logback</groupId>
-        <artifactId>logback-classic</artifactId>
-        <version>1.5.22</version>
-    </dependency>
 </dependencies>
 ```
 
----
+**Logging**: The library uses SLF4J for logging. You can optionally add an SLF4J implementation (e.g.,
+`logback-classic`, `slf4j-simple`) as a runtime dependency if you need logging output.
 
 ## Usage
 
@@ -95,9 +83,6 @@ dependencies {
 Listener exceptions are isolated to prevent monitoring interruption. Override `onError()` for custom error handling:
 
 ```java
-import dev.bxlab.clipboard.monitor.*;
-import dev.bxlab.clipboard.monitor.detector.PollingDetector;
-
 ClipboardListener listener = new ClipboardListener() {
     @Override
     public void onChange(ClipboardContent content) {
@@ -127,12 +112,6 @@ try (ClipboardMonitor monitor = ClipboardMonitor.builder()
 Direct clipboard access without monitoring. Useful for simple clipboard utilities:
 
 ```java
-import dev.bxlab.clipboard.monitor.core.ClipboardMonitor;
-import dev.bxlab.clipboard.monitor.detector.PollingDetector;
-import java.awt.image.BufferedImage;
-import java.io.File;
-import java.util.List;
-
 try (ClipboardMonitor monitor = ClipboardMonitor.builder()
         .detector(PollingDetector.defaults())
         .listener(c -> {}) // Required by API but not used
@@ -156,15 +135,11 @@ try (ClipboardMonitor monitor = ClipboardMonitor.builder()
 **Note**: Read/write operations do not require calling `start()`. Monitor must still be built with a detector and
 listener (API requirement).
 
----
-
 ## Configuration
 
 ### Monitor Configuration
 
 ```java
-import java.time.Duration;
-
 ClipboardMonitor.builder()
     .detector(PollingDetector.defaults())
     .listener(content -> { /* ... */ })
@@ -184,8 +159,6 @@ ClipboardMonitor.builder()
 - **Low debounce (20-50ms)**: More responsive, suitable for UI updates
 - **notifyOnStart=true**: Useful for sync applications that need current state on startup
 
----
-
 ## Examples
 
 The project includes runnable examples demonstrating various use cases:
@@ -201,8 +174,6 @@ The project includes runnable examples demonstrating various use cases:
 
 For detailed documentation and source code, see [examples/README.md](examples/README.md).
 
----
-
 ## Architecture
 
 The library uses a layered architecture with three main components:
@@ -214,8 +185,6 @@ The library uses a layered architecture with three main components:
 Thread safety is guaranteed through atomic primitives, volatile fields, dedicated lock objects, and immutable data
 structures.
 
----
-
 ## Library Reference
 
 For comprehensive API documentation, see [llm/LIBRARY_REFERENCE.md](docs/INTEGRATION.md).
@@ -226,11 +195,6 @@ This reference document is optimized for LLM consumption and includes:
 - Detector configuration (PollingDetector, OwnershipDetector)
 - Content type implementations (TextContent, ImageContent, FilesContent, UnknownContent)
 - Usage examples for common scenarios
-- Thread safety and resource management details
-
-Ideal for AI-assisted development and code generation tools.
-
----
 
 ## License
 
