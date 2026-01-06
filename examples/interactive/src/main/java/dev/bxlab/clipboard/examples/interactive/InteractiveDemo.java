@@ -37,7 +37,7 @@ public final class InteractiveDemo {
 
         ClipboardListener forwardingListener = new ClipboardListener() {
             @Override
-            public void onClipboardChange(ClipboardContent content) {
+            public void onChange(ClipboardContent content) {
                 if (consoleHolder[0] != null) {
                     consoleHolder[0].printClipboardChange(content);
                 }

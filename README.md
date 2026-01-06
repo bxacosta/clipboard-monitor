@@ -100,7 +100,7 @@ import dev.bxlab.clipboard.monitor.detector.PollingDetector;
 
 ClipboardListener listener = new ClipboardListener() {
     @Override
-    public void onClipboardChange(ClipboardContent content) {
+    public void onChange(ClipboardContent content) {
         // Process content
         if (someCondition) {
             throw new RuntimeException("Processing failed");

@@ -241,7 +241,7 @@ Functional interface for receiving clipboard change notifications.
 ```java
 @FunctionalInterface
 public interface ClipboardListener {
-    void onClipboardChange(ClipboardContent content);
+    void onChange(ClipboardContent content);
     default void onError(Exception error) { }
 }
 ```
@@ -256,7 +256,7 @@ public interface ClipboardListener {
 // With error handling
 .listener(new ClipboardListener() {
     @Override
-    public void onClipboardChange(ClipboardContent content) {
+    public void onChange(ClipboardContent content) {
         processContent(content);
     }
     

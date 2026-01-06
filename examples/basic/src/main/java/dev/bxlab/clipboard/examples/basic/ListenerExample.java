@@ -57,7 +57,7 @@ public final class ListenerExample {
         }
 
         @Override
-        public void onClipboardChange(ClipboardContent content) {
+        public void onChange(ClipboardContent content) {
             String time = LocalTime.now().format(TIME_FMT);
             System.out.printf("[%s][%s] %s - %d bytes%n",
                     time, name, content.type(), content.size());
@@ -77,7 +77,7 @@ public final class ListenerExample {
         }
 
         @Override
-        public void onClipboardChange(ClipboardContent content) {
+        public void onChange(ClipboardContent content) {
             content.asText().ifPresent(text -> {
                 String preview = text.length() > 50
                         ? text.substring(0, 50) + "..."
@@ -100,7 +100,7 @@ public final class ListenerExample {
         }
 
         @Override
-        public void onClipboardChange(ClipboardContent content) {
+        public void onChange(ClipboardContent content) {
             switch (content.type()) {
                 case TEXT -> textCount++;
                 case IMAGE -> imageCount++;

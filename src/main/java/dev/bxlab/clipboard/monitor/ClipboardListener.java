@@ -21,7 +21,7 @@ public interface ClipboardListener {
      *
      * @param content new clipboard content
      */
-    void onClipboardChange(ClipboardContent content);
+    void onChange(ClipboardContent content);
 
     /**
      * Called when an error occurs during monitoring.

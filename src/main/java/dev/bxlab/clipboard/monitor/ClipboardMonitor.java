@@ -46,21 +46,6 @@ import java.util.concurrent.atomic.AtomicReference;
  * }
  * }</pre>
  *
- * <h2>Pattern Matching (Java 21)</h2>
- * <pre>{@code
- * ClipboardMonitor monitor = ClipboardMonitor.builder()
- *     .detector(PollingDetector.defaults())
- *     .listener(content -> {
- *         switch (content) {
- *             case TextContent t -> System.out.println("Text: " + t.text());
- *             case ImageContent i -> System.out.println("Image: " + i.width() + "x" + i.height());
- *             case FilesContent f -> System.out.println("Files: " + f.files().size());
- *             case UnknownContent _ -> System.out.println("Unknown");
- *         }
- *     })
- *     .build();
- * }</pre>
- *
  * <h2>Bidirectional Sync</h2>
  * <pre>{@code
  * // Content written via write() is automatically tracked to prevent loops
@@ -370,7 +355,7 @@ public final class ClipboardMonitor implements AutoCloseable {
                     .name("clipboard-listener-" + i)
                     .start(() -> {
                         try {
-                            listener.onClipboardChange(content);
+                            listener.onChange(content);
                         } catch (Exception e) {
                             listener.onError(e);
                         }
