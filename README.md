@@ -10,7 +10,7 @@ modifications and supports text, images, and file lists.
 ## Quick Start
 
 ```java
-import dev.bxlab.clipboard.monitor.ClipboardMonitor;
+import dev.bxlab.clipboard.monitor.core.ClipboardMonitor;
 import dev.bxlab.clipboard.monitor.detector.PollingDetector;
 
 try (ClipboardMonitor monitor = ClipboardMonitor.builder()
@@ -127,7 +127,7 @@ try (ClipboardMonitor monitor = ClipboardMonitor.builder()
 Direct clipboard access without monitoring. Useful for simple clipboard utilities:
 
 ```java
-import dev.bxlab.clipboard.monitor.ClipboardMonitor;
+import dev.bxlab.clipboard.monitor.core.ClipboardMonitor;
 import dev.bxlab.clipboard.monitor.detector.PollingDetector;
 import java.awt.image.BufferedImage;
 import java.io.File;

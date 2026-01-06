@@ -1,7 +1,7 @@
 package dev.bxlab.clipboard.monitor.detector;
 
 import dev.bxlab.clipboard.monitor.content.ClipboardContent;
-import dev.bxlab.clipboard.monitor.internal.ClipboardAccessor;
+import dev.bxlab.clipboard.monitor.core.ClipboardAccessor;
 import dev.bxlab.clipboard.monitor.util.TextUtils;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;

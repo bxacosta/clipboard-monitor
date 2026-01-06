@@ -1,4 +1,4 @@
-package dev.bxlab.clipboard.monitor.internal;
+package dev.bxlab.clipboard.monitor.core;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;

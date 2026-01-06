@@ -1,12 +1,10 @@
-package dev.bxlab.clipboard.monitor;
+package dev.bxlab.clipboard.monitor.core;
 
 import dev.bxlab.clipboard.monitor.content.ClipboardContent;
 import dev.bxlab.clipboard.monitor.detector.ChangeDetector;
 import dev.bxlab.clipboard.monitor.detector.OwnershipDetector;
 import dev.bxlab.clipboard.monitor.detector.PollingDetector;
 import dev.bxlab.clipboard.monitor.exception.ClipboardUnavailableException;
-import dev.bxlab.clipboard.monitor.internal.ClipboardAccessor;
-import dev.bxlab.clipboard.monitor.internal.OwnContentTracker;
 import dev.bxlab.clipboard.monitor.transferable.FilesTransferable;
 import dev.bxlab.clipboard.monitor.transferable.ImageTransferable;
 import dev.bxlab.clipboard.monitor.util.HashUtils;

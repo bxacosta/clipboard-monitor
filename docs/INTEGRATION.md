@@ -449,9 +449,9 @@ Library uses SLF4J. Requires runtime implementation (e.g., `logback-classic`).
 ## Required Imports
 
 ```java
-import dev.bxlab.clipboard.monitor.ClipboardMonitor;
+import dev.bxlab.clipboard.monitor.core.ClipboardMonitor;
 import dev.bxlab.clipboard.monitor.content.ClipboardContent;
-import dev.bxlab.clipboard.monitor.ClipboardListener;
+import dev.bxlab.clipboard.monitor.core.ClipboardListener;
 import dev.bxlab.clipboard.monitor.content.ContentType;
 import dev.bxlab.clipboard.monitor.content.TextContent;
 import dev.bxlab.clipboard.monitor.content.ImageContent;

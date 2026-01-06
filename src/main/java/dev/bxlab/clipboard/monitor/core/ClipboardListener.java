@@ -1,4 +1,4 @@
-package dev.bxlab.clipboard.monitor;
+package dev.bxlab.clipboard.monitor.core;
 
 import dev.bxlab.clipboard.monitor.content.ClipboardContent;
 

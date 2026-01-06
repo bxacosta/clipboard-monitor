@@ -1,4 +1,4 @@
-package dev.bxlab.clipboard.monitor.internal;
+package dev.bxlab.clipboard.monitor.core;
 
 import dev.bxlab.clipboard.monitor.util.TextUtils;
 import lombok.AccessLevel;

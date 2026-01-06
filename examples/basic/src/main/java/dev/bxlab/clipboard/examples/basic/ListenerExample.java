@@ -1,8 +1,8 @@
 package dev.bxlab.clipboard.examples.basic;
 
 import dev.bxlab.clipboard.monitor.content.ClipboardContent;
-import dev.bxlab.clipboard.monitor.ClipboardListener;
-import dev.bxlab.clipboard.monitor.ClipboardMonitor;
+import dev.bxlab.clipboard.monitor.core.ClipboardListener;
+import dev.bxlab.clipboard.monitor.core.ClipboardMonitor;
 import dev.bxlab.clipboard.monitor.detector.PollingDetector;
 
 import java.time.Duration;
