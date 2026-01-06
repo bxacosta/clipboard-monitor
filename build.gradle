@@ -22,7 +22,6 @@ repositories {
 dependencies {
     // Logging
     api 'org.slf4j:slf4j-api:2.0.17'
-    runtimeOnly 'ch.qos.logback:logback-classic:1.5.22'
 
     // Tests
     testImplementation platform('org.junit:junit-bom:5.14.1')
