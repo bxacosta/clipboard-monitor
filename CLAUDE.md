@@ -1,134 +1,142 @@
-# Clipboard Monitor - Code Conventions
+# Clipboard Monitor - Development Guide
 
-Java 21 | Package: `dev.bxlab.clipboard.monitor` | Gradle 9.x + Lombok
+Java library for real-time system clipboard monitoring. Supports text, images, and file lists.
 
-```bash
-./gradlew clean build    # compile, test, package
-./gradlew test --rerun   # run tests only
+## Code Philosophy
+
+- Favor simple and elegant solutions over complex abstractions
+- Apply the Single Responsibility Principle consistently
+- Maintain a linear code flow that is simple to follow and reason about
+- Use design patterns flexibly when they simplify code and reduce redundancy
+- Avoid overengineering and unnecessary abstractions
+- Prioritize code consistency, modularity, and maintainability
+- Favor self-documented code over Javadoc
+
+## Research and External Resources
+
+When implementation details are unclear or dependencies need to be added:
+
+- Use web search tools to find current best practices and API usage
+- Query Context7 MCP Tool for official library documentation
+- Verify latest stable versions before adding dependencies
+- Search for modern Java capabilities and idiomatic coding standards
+
+## Commands
+
+```shell
+# compile, test, package
+./gradlew clean build
+
+ # run tests only
+./gradlew test --rerun   
 ```
 
-## Project Structure
+## Package Structure
 
-- `[root package]` → Public API: `ClipboardMonitor`, `ClipboardContent`, `ClipboardListener`, `ContentType`
-- `exception/` → Custom exceptions extending `ClipboardException`
-- `internal/` → NOT public API (detectors, guards, readers, stats)
-- `transferable/` → Clipboard Transferable implementations
-- `util/` → Utility classes
-
----
+- `core/` - Public API and monitoring infrastructure
+- `content/` - Content type implementations
+- `detector/` - Detection strategies
+- `exception/` - Custom exceptions extending ClipboardException
+- `transferable/` - AWT Transferable implementations
+- `util/` - Utility classes
 
 ## Class Design
 
-- All public classes are `final` unless designed for extension
-- DTOs and value objects must be immutable
-- Utility classes: private constructor + `final` class
-- Internal implementation goes in `internal/` package
+- Each class has a single, well-defined responsibility
+- DTOs and value objects must be immutable (use record when possible)
+- Utility classes use private constructor and final modifier
+- Keep class size manageable; prefer multiple focused classes over large ones
 
 ## Lombok
 
-- `@Slf4j` for all classes that need logging
-- `@Getter` only (never `@Setter`) for immutable classes
+- `@Slf4j` for logging in all classes that require it
+- `@Getter` only; never use `@Setter` on immutable classes
 - `@EqualsAndHashCode(onlyExplicitlyIncluded = true)` with explicit `@Include` on identity fields
 - `@NoArgsConstructor(access = AccessLevel.PRIVATE)` for utility classes
-- Avoid `@Builder` when custom validation or type-safe factory methods are needed
+- Avoid `@Builder` when custom validation or defensive copies are needed in construction
 
-## Builder Pattern
+### Builder Pattern
 
-- Use custom Builder when: validation in `build()`, type-safe factory methods, or defensive copies needed
-- Builder constructor is private
-- All setter methods return `this` for chaining
-- Validate required fields with `Objects.requireNonNull()` in `build()`
-- Validate constraints (positive intervals, non-empty lists) in `build()`
+Use custom Builders for type-safe instantiation and complex validation:
+
+- **Structure:** Private constructor with fluent setters returning `this`.
+- **Validation:** Use `build()` to enforce `Objects.requireNonNull()` and domain constraints.
 
 ## Thread Safety
+
+Concurrency primitives:
 
 - `AtomicBoolean` for state flags (running, closed)
 - `AtomicReference<T>` for reference updates
 - `CopyOnWriteArrayList<T>` for listener collections
-- `volatile` for shared mutable state
-- Dedicated lock object for `synchronized` blocks (never `synchronized(this)`)
-- Dedicated `ExecutorService` for async callbacks
-
-## Immutability & Defensive Copies
-
-- Use `List.copyOf()` for collections in constructors and builders
-- Use `array.clone()` for arrays in constructors and getters
-- Return `Optional.empty()` instead of `null`
-- Return empty collections instead of `null`
+- Dedicated lock object for synchronized blocks (never `synchronized(this)`)
 
 ## Null Handling
 
-- Validate required parameters with `Objects.requireNonNull(param, "message")`
-- Return `Optional<T>` for nullable results
-- Never return `null` from public methods
+- Validate required parameters: `Objects.requireNonNull(param, "descriptive message")`
+- Return `Optional.empty()` instead of null for nullable results
+- Return empty collections instead of null
+- Never return null from public API methods
 
 ## Exceptions
 
-- All custom exceptions extend `ClipboardException` (which extends `RuntimeException`)
-- Always include context in exception messages
-- Use constructor with `(String message, Throwable cause)` when wrapping
-
-## Time APIs
-
-- `System.nanoTime()` for intervals and elapsed time measurement
-- `Instant.now()` for timestamps and wall-clock time
-- `java.time.Duration` for duration parameters in APIs
+- All custom exceptions extend `ClipboardException` (which extends RuntimeException)
+- Include context in exception messages
+- Use `(String message, Throwable cause)` constructor when wrapping exceptions
 
 ## Logging
 
+Log levels (library context):
+
 - DEBUG: internal flow, state changes, hash values
-- INFO: lifecycle events (start, stop, configuration)
 - WARN: recoverable issues, fallback behavior
-- ERROR: failures with exception object
-- Use placeholder syntax: `log.debug("value: {}", value)`
+- ERROR: failures with an exception object
 
----
+Avoid INFO logs in library code. INFO is reserved for applications, not libraries.
 
-## Naming Conventions
-
-- Utility classes: `*Utils` (e.g., `HashUtils`, `ImageUtils`)
-- Detectors: `*Detector` (e.g., `PollingDetector`)
-- Transferables: `*Transferable` (e.g., `ImageTransferable`)
-- Exceptions: `*Exception` (e.g., `ClipboardChangedException`)
-- Test classes: `*Test` (e.g., `ClipboardMonitorTest`)
-- Test methods: `should*()` (e.g., `shouldCreateTextContent()`)
-
----
+Use placeholder syntax: `log.debug("value: {}", value)`
 
 ## Testing
 
-- Framework: JUnit 5 + AssertJ
-- Use Given/When/Then structure in test body
-- Use `assertThat()` from AssertJ for assertions
-- Use `assertThatThrownBy()` for exception testing
-- Test method names describe expected behavior
+Framework: JUnit 5 + AssertJ + Awaitility
 
----
+Structure:
+
+- Use Given/When/Then structure in the test body
+- `assertThat()` from AssertJ for assertions
+- `assertThatThrownBy()` for exception testing
+- Test method names describe expected behavior
+- Methods: `should*()` (shouldCreateTextContent)
 
 ## Documentation
 
-- Javadoc required for all public classes and methods
-- Use `{@code}` blocks for inline code in Javadoc
-- Use `<pre>{@code ... }</pre>` for code examples
+Javadoc requirements:
+
+- Required for all public classes and methods
+- Be simple, concise, and direct, explain what it does
+- Avoid technical justifications or implementation details
 - Document `@param`, `@return`, and `@throws`
 
----
+## Design Patterns
 
-## Patterns to Follow
+Apply patterns flexibly when they simplify the structure:
 
-- Implement `AutoCloseable` for classes managing resources; `close()` must be idempotent
-- Use `record` for immutable data containers
-- Use `@FunctionalInterface` for single-method interfaces with optional defaults
-- Use pattern matching with `instanceof` for type-safe casting
-- Return `Optional<T>` with type check before extracting value
+- Sealed interfaces for closed type hierarchies
+- AutoCloseable for resource management (close() must be idempotent)
+- Record for immutable data containers
+- @FunctionalInterface for single-method interfaces with optional defaults
+- Builder pattern for classes with multiple optional parameters
+- Strategy pattern for pluggable behavior
+- Pattern matching with instanceof for type-safe casting
 
-## Anti-Patterns to Avoid
+Apply patterns pragmatically; avoid forcing patterns where simple code suffices.
 
-- `@Setter` on DTOs → use immutable with builder
-- `return null` → use `Optional.empty()` or empty collection
-- Catch and ignore exceptions → log at minimum
-- Public mutable fields → private final + getter
-- `new ArrayList<>(list)` for immutable copy → use `List.copyOf()`
-- `Thread.sleep()` → use `ScheduledExecutorService`
-- String concatenation in logs → use placeholder `{}`
-- `synchronized(this)` → use dedicated lock object
+## Dependencies
+
+Dependency philosophy:
+
+- Minimize external dependencies
+- Prefer standard library solutions when sufficient
+- Verify latest stable version before adding new dependencies
+- Use research tools to understand proper usage patterns
+- Justify new dependencies based on maintainability and value
