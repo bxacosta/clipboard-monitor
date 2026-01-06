@@ -1,5 +1,7 @@
 package dev.bxlab.clipboard.monitor;
 
+import dev.bxlab.clipboard.monitor.content.ClipboardContent;
+import dev.bxlab.clipboard.monitor.content.ContentType;
 import dev.bxlab.clipboard.monitor.detector.PollingDetector;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

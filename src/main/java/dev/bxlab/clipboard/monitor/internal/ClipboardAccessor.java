@@ -1,10 +1,10 @@
 package dev.bxlab.clipboard.monitor.internal;
 
-import dev.bxlab.clipboard.monitor.ClipboardContent;
-import dev.bxlab.clipboard.monitor.FilesContent;
-import dev.bxlab.clipboard.monitor.ImageContent;
-import dev.bxlab.clipboard.monitor.TextContent;
-import dev.bxlab.clipboard.monitor.UnknownContent;
+import dev.bxlab.clipboard.monitor.content.ClipboardContent;
+import dev.bxlab.clipboard.monitor.content.FilesContent;
+import dev.bxlab.clipboard.monitor.content.ImageContent;
+import dev.bxlab.clipboard.monitor.content.TextContent;
+import dev.bxlab.clipboard.monitor.content.UnknownContent;
 import dev.bxlab.clipboard.monitor.exception.ClipboardUnavailableException;
 import dev.bxlab.clipboard.monitor.util.HashUtils;
 import dev.bxlab.clipboard.monitor.util.ImageUtils;

@@ -1,4 +1,4 @@
-package dev.bxlab.clipboard.monitor;
+package dev.bxlab.clipboard.monitor.content;
 
 import java.awt.image.BufferedImage;
 import java.io.File;
@@ -50,8 +50,7 @@ import java.util.Optional;
  * @see FilesContent
  * @see UnknownContent
  */
-public sealed interface ClipboardContent
-        permits TextContent, ImageContent, FilesContent, UnknownContent {
+public sealed interface ClipboardContent permits TextContent, ImageContent, FilesContent, UnknownContent {
 
     /**
      * Returns the content type classification.

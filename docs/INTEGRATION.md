@@ -450,13 +450,13 @@ Library uses SLF4J. Requires runtime implementation (e.g., `logback-classic`).
 
 ```java
 import dev.bxlab.clipboard.monitor.ClipboardMonitor;
-import dev.bxlab.clipboard.monitor.ClipboardContent;
+import dev.bxlab.clipboard.monitor.content.ClipboardContent;
 import dev.bxlab.clipboard.monitor.ClipboardListener;
-import dev.bxlab.clipboard.monitor.ContentType;
-import dev.bxlab.clipboard.monitor.TextContent;
-import dev.bxlab.clipboard.monitor.ImageContent;
-import dev.bxlab.clipboard.monitor.FilesContent;
-import dev.bxlab.clipboard.monitor.UnknownContent;
+import dev.bxlab.clipboard.monitor.content.ContentType;
+import dev.bxlab.clipboard.monitor.content.TextContent;
+import dev.bxlab.clipboard.monitor.content.ImageContent;
+import dev.bxlab.clipboard.monitor.content.FilesContent;
+import dev.bxlab.clipboard.monitor.content.UnknownContent;
 import dev.bxlab.clipboard.monitor.detector.PollingDetector;
 import dev.bxlab.clipboard.monitor.detector.OwnershipDetector;
 import dev.bxlab.clipboard.monitor.exception.ClipboardException;

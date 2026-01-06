@@ -1,6 +1,6 @@
 package dev.bxlab.clipboard.examples.interactive;
 
-import dev.bxlab.clipboard.monitor.ClipboardContent;
+import dev.bxlab.clipboard.monitor.content.ClipboardContent;
 import dev.bxlab.clipboard.monitor.ClipboardListener;
 import dev.bxlab.clipboard.monitor.ClipboardMonitor;
 import dev.bxlab.clipboard.monitor.detector.PollingDetector;

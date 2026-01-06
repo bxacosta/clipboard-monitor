@@ -1,5 +1,7 @@
 package dev.bxlab.clipboard.monitor;
 
+import dev.bxlab.clipboard.monitor.content.ClipboardContent;
+
 /**
  * Listener for clipboard change notifications.
  * <p>

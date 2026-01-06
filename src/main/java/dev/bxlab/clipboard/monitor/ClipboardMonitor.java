@@ -1,5 +1,6 @@
 package dev.bxlab.clipboard.monitor;
 
+import dev.bxlab.clipboard.monitor.content.ClipboardContent;
 import dev.bxlab.clipboard.monitor.detector.ChangeDetector;
 import dev.bxlab.clipboard.monitor.detector.OwnershipDetector;
 import dev.bxlab.clipboard.monitor.detector.PollingDetector;

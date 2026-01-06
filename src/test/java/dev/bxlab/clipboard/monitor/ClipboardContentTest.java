@@ -1,5 +1,11 @@
 package dev.bxlab.clipboard.monitor;
 
+import dev.bxlab.clipboard.monitor.content.ClipboardContent;
+import dev.bxlab.clipboard.monitor.content.ContentType;
+import dev.bxlab.clipboard.monitor.content.FilesContent;
+import dev.bxlab.clipboard.monitor.content.ImageContent;
+import dev.bxlab.clipboard.monitor.content.TextContent;
+import dev.bxlab.clipboard.monitor.content.UnknownContent;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 

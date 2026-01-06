@@ -1,6 +1,6 @@
 package dev.bxlab.clipboard.monitor.detector;
 
-import dev.bxlab.clipboard.monitor.ClipboardContent;
+import dev.bxlab.clipboard.monitor.content.ClipboardContent;
 
 import java.util.function.Consumer;
 

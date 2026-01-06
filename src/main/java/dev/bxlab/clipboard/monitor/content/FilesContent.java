@@ -1,4 +1,4 @@
-package dev.bxlab.clipboard.monitor;
+package dev.bxlab.clipboard.monitor.content;
 
 import dev.bxlab.clipboard.monitor.util.TextUtils;
 
