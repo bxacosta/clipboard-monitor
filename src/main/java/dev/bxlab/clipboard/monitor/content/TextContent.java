@@ -8,13 +8,7 @@ import java.util.Objects;
 /**
  * Text content from the clipboard.
  *
- * <pre>{@code
- * TextContent content = new TextContent("Hello World", hash, Instant.now(), 11);
- * System.out.println("Text: " + content.text());
- * System.out.println("Length: " + content.size() + " bytes");
- * }</pre>
- *
- * @param text      the text content (never null)
+ * @param text      the text content
  * @param hash      SHA-256 hash of the content
  * @param timestamp when the content was captured
  * @param sizeBytes size of the text in UTF-8 bytes
@@ -27,7 +21,7 @@ public record TextContent(
 ) implements ClipboardContent {
 
     /**
-     * Creates a new TextContent instance.
+     * Compact constructor with validation.
      *
      * @throws NullPointerException     if any parameter is null
      * @throws IllegalArgumentException if sizeBytes is negative

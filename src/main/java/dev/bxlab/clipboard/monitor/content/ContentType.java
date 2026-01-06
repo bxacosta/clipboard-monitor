@@ -6,22 +6,22 @@ package dev.bxlab.clipboard.monitor.content;
 public enum ContentType {
 
     /**
-     * Any text type (plain, HTML, RTF). Specific flavor available in content metadata.
+     * Text content (plain, HTML, RTF).
      */
     TEXT,
 
     /**
-     * Any image type (PNG, JPEG, BMP). Returned as {@link java.awt.image.BufferedImage}.
+     * Image content (PNG, JPEG, BMP).
      */
     IMAGE,
 
     /**
-     * List of copied files. Returned as {@link java.util.List} of {@link java.io.File}.
+     * File list content.
      */
     FILES,
 
     /**
-     * Unknown or unsupported type.
+     * Unknown or unsupported content.
      */
     UNKNOWN
 }

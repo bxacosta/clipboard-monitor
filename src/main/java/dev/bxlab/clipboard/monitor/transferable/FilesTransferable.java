@@ -8,15 +8,14 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Transferable implementation for a list of files.
- * Used to write file references to the system clipboard.
+ * Transferable implementation for file lists.
  */
 public final class FilesTransferable implements Transferable {
 
     private final List<File> files;
 
     /**
-     * Creates a new transferable for a list of files.
+     * Creates a new file list transferable.
      *
      * @param files files to transfer
      * @throws NullPointerException     if files is null

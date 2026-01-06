@@ -9,13 +9,7 @@ import java.util.Objects;
 /**
  * Image content from the clipboard.
  *
- * <pre>{@code
- * ImageContent content = new ImageContent(image, hash, Instant.now(), 800, 600);
- * System.out.println("Image: " + content.width() + "x" + content.height());
- * BufferedImage img = content.image();
- * }</pre>
- *
- * @param image     the image content (never null)
+ * @param image     the image content
  * @param hash      SHA-256 hash of the content
  * @param timestamp when the content was captured
  * @param width     image width in pixels
@@ -30,7 +24,7 @@ public record ImageContent(
 ) implements ClipboardContent {
 
     /**
-     * Creates a new ImageContent instance.
+     * Compact constructor with validation.
      *
      * @throws NullPointerException     if image, hash, or timestamp is null
      * @throws IllegalArgumentException if width or height is not positive
@@ -48,7 +42,7 @@ public record ImageContent(
     }
 
     /**
-     * Creates a new ImageContent instance with dimensions extracted from the image.
+     * Creates ImageContent with dimensions extracted from the image.
      *
      * @param image     the image content
      * @param hash      SHA-256 hash of the content

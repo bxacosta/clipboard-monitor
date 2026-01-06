@@ -17,31 +17,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
- * Detects clipboard changes using the clipboard ownership mechanism.
- * <p>
- * This detector takes ownership of the clipboard and gets notified when
- * another process takes ownership. It provides lower latency than
- * {@link PollingDetector} but may be less reliable on some platforms.
- * <p>
- *
- * <h2>How it works</h2>
- * <ol>
- *   <li>Detector takes clipboard ownership</li>
- *   <li>When another app copies something, the detector loses ownership</li>
- *   <li>The {@link ClipboardOwner#lostOwnership} callback fires</li>
- *   <li>After a short delay, the detector reads the new content and retakes ownership</li>
- * </ol>
- *
- * <h2>Usage</h2>
- * <pre>{@code
- * // With defaults (50ms delay)
- * OwnershipDetector detector = OwnershipDetector.defaults();
- *
- * // With custom delay
- * OwnershipDetector detector = OwnershipDetector.builder()
- *     .delay(Duration.ofMillis(100))
- *     .build();
- * }</pre>
+ * Detects clipboard changes using clipboard ownership mechanism.
  *
  * @see ChangeDetector
  * @see PollingDetector
@@ -206,9 +182,9 @@ public final class OwnershipDetector implements ChangeDetector, ClipboardOwner {
         private Duration delay = DEFAULT_DELAY;
 
         /**
-         * Sets the delay before processing clipboard change after losing ownership.
+         * Sets the delay before processing changes.
          *
-         * @param delay processing delay (must be non-negative)
+         * @param delay processing delay
          * @return this builder
          * @throws NullPointerException     if delay is null
          * @throws IllegalArgumentException if delay is negative

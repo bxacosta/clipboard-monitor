@@ -4,30 +4,19 @@ import dev.bxlab.clipboard.monitor.content.ClipboardContent;
 
 /**
  * Listener for clipboard change notifications.
- * <p>
- * Implement this interface to receive callbacks when system clipboard content changes.
- *
- * <pre>{@code
- * ClipboardListener listener = content -> {
- *     System.out.println("New content: " + content.getType());
- * };
- * }</pre>
  */
 @FunctionalInterface
 public interface ClipboardListener {
 
     /**
-     * Called when clipboard change is detected.
-     * This method is called on a separate thread. Implementations must be thread-safe
-     * if accessing shared resources.
+     * Called when clipboard content changes.
      *
      * @param content new clipboard content
      */
     void onChange(ClipboardContent content);
 
     /**
-     * Called when an error occurs during monitoring.
-     * The default implementation does nothing. Override for custom error handling.
+     * Called when an error occurs during listener execution.
      *
      * @param error exception that occurred
      */

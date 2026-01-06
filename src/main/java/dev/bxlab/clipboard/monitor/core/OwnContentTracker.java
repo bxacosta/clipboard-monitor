@@ -11,22 +11,6 @@ import java.util.Map;
 
 /**
  * Tracks content written by this monitor to prevent notification loops.
- * <p>
- * Uses an LRU (Least Recently Used) cache with TTL (Time To Live) to track
- * recently written content hashes. This allows proper detection of own content
- * even in multi-write scenarios where multiple writes happen in quick succession.
- * <p>
- * Key features:
- * <ul>
- *   <li>LRU eviction: oldest entries removed when capacity exceeded</li>
- *   <li>TTL expiration: entries expire after 5 seconds</li>
- *   <li>Thread-safe: synchronized map wrapper</li>
- *   <li>Memory bounded: maximum 10 entries (~2KB)</li>
- * </ul>
- * <p>
- * This class fixes the grace period bug in the previous implementation by using
- * AND logic: a hash is only considered "own" if it exists in the cache AND
- * is within the TTL window.
  */
 @Slf4j
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
@@ -34,19 +18,16 @@ public final class OwnContentTracker {
 
     /**
      * Maximum number of hashes to track.
-     * Supports multi-write scenarios where several writes happen quickly.
      */
     private static final int MAX_ENTRIES = 10;
 
     /**
      * Time-to-live in nanoseconds (5 seconds).
-     * After this time, entries are considered expired and will be removed.
      */
     private static final long TTL_NANOS = 5_000_000_000L;
 
     /**
-     * LRU cache mapping hash -> write timestamp (in nanos).
-     * Uses access-order LinkedHashMap wrapped in a synchronized map.
+     * LRU cache mapping hash to write timestamp.
      */
     private final Map<String, Long> recentHashes = Collections.synchronizedMap(
             new LinkedHashMap<>(MAX_ENTRIES, 0.75f, true) {
@@ -76,12 +57,9 @@ public final class OwnContentTracker {
     }
 
     /**
-     * Marks a hash as own content (written by this monitor).
-     * <p>
-     * The hash will be remembered for up to 5 seconds or until evicted
-     * by newer entries (LRU eviction with max 10 entries).
+     * Marks a hash as own content.
      *
-     * @param hash SHA-256 hash of written content, may be null or empty (ignored)
+     * @param hash content hash, may be null or empty (ignored)
      */
     public void markOwn(String hash) {
         if (hash == null || hash.isEmpty()) {
@@ -94,13 +72,9 @@ public final class OwnContentTracker {
 
     /**
      * Checks if content with the given hash was written by this monitor.
-     * <p>
-     * Returns true only if the hash exists in the cache AND is within the TTL.
-     * This fixes the grace period bug where ANY change was ignored during
-     * a time window after writing.
      *
-     * @param hash SHA-256 hash of content to verify, may be null or empty
-     * @return true if content was written by this monitor and is within TTL, false otherwise
+     * @param hash content hash, may be null or empty
+     * @return true if content was written by this monitor, false otherwise
      */
     public boolean isOwn(String hash) {
         if (hash == null || hash.isEmpty()) {
@@ -126,8 +100,6 @@ public final class OwnContentTracker {
 
     /**
      * Clears all tracked hashes.
-     * <p>
-     * Should be called when the monitor is stopped or reset.
      */
     public void clear() {
         recentHashes.clear();
@@ -136,9 +108,6 @@ public final class OwnContentTracker {
 
     /**
      * Returns the number of currently tracked hashes.
-     * <p>
-     * Note: this count may include expired entries that haven't been
-     * lazily cleaned up yet.
      *
      * @return number of tracked hashes
      */

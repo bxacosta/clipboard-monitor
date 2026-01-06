@@ -49,10 +49,7 @@ public final class HashUtils {
     }
 
     /**
-     * Calculates SHA-256 hash of an image based on dimensions and sampled pixels.
-     * <p>
-     * Uses sampling strategy to avoid hashing all pixels of large images.
-     * Samples up to 1000 pixels uniformly distributed across the image.
+     * Calculates SHA-256 hash of an image.
      *
      * @param image image to hash
      * @return hexadecimal hash string
@@ -84,7 +81,7 @@ public final class HashUtils {
     }
 
     /**
-     * Calculates SHA-256 hash of a file list based on paths, modification times, and sizes.
+     * Calculates SHA-256 hash of a file list.
      *
      * @param files files to hash
      * @return hexadecimal hash string

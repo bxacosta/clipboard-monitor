@@ -12,7 +12,7 @@ public final class TextUtils {
     private static final int DEFAULT_TRUNCATE_LENGTH = 16;
 
     /**
-     * Truncates a string to the default length (8 characters).
+     * Truncates a string to the default length (16 characters).
      *
      * @param text string to truncate
      * @return truncated string with "..." suffix, or empty string if null
@@ -23,8 +23,6 @@ public final class TextUtils {
 
     /**
      * Truncates a string to a specified length.
-     * <p>
-     * Replaces newlines with spaces and adds "..." suffix if truncated.
      *
      * @param text   string to truncate
      * @param length maximum length before truncation

@@ -8,7 +8,6 @@ import java.util.Objects;
 
 /**
  * Transferable implementation for images.
- * Used to write images to the system clipboard.
  */
 public final class ImageTransferable implements Transferable {
 

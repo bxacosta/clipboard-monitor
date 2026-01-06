@@ -28,28 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * System clipboard monitor with real-time change detection.
- * <p>
- * Detects clipboard changes using configurable detection strategies and notifies
- * registered listeners. Supports multiple listeners with isolation - each listener
- * runs in its own virtual thread, so a slow or failing listener doesn't affect others.
- *
- * <h2>Basic Usage</h2>
- * <pre>{@code
- * try (ClipboardMonitor monitor = ClipboardMonitor.builder()
- *         .detector(PollingDetector.defaults())
- *         .listener(content -> System.out.println("Change: " + content.type()))
- *         .build()) {
- *     monitor.start();
- *     // ... application logic
- * }
- * }</pre>
- *
- * <h2>Bidirectional Sync</h2>
- * <pre>{@code
- * // Content written via write() is automatically tracked to prevent loops
- * monitor.write("text from remote");
- * }</pre>
+ * Monitors system clipboard for changes and notifies registered listeners.
  *
  * @see PollingDetector
  * @see OwnershipDetector
@@ -316,11 +295,6 @@ public final class ClipboardMonitor implements AutoCloseable {
         log.debug("Watch loop ended");
     }
 
-    /**
-     * Processes a pending content change after the debounce period.
-     *
-     * @param content the content to process
-     */
     private void processPendingChange(ClipboardContent content) {
         try {
             String expectedHash = content.hash();
@@ -397,7 +371,7 @@ public final class ClipboardMonitor implements AutoCloseable {
         /**
          * Sets the debounce duration.
          *
-         * @param debounce debounce duration (must be non-negative)
+         * @param debounce minimum time between notifications
          * @return this builder
          */
         public Builder debounce(Duration debounce) {
@@ -406,7 +380,7 @@ public final class ClipboardMonitor implements AutoCloseable {
         }
 
         /**
-         * Whether to notify the initial clipboard content when starting.
+         * Configures notification of initial clipboard content on start.
          *
          * @param notify true to notify initial content
          * @return this builder

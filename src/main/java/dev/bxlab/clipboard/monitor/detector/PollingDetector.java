@@ -15,23 +15,6 @@ import java.util.function.Consumer;
 
 /**
  * Detects clipboard changes via periodic polling.
- * <p>
- * This detector periodically reads the clipboard and compares content hashes
- * to detect changes. It is more reliable than {@link OwnershipDetector} but
- * has higher latency (up to the polling interval).
- * <p>
- * Recommended for most use cases due to its reliability across all platforms.
- *
- * <h2>Usage</h2>
- * <pre>{@code
- * // With defaults (200ms interval)
- * PollingDetector detector = PollingDetector.defaults();
- *
- * // With custom interval
- * PollingDetector detector = PollingDetector.builder()
- *     .interval(Duration.ofMillis(100))
- *     .build();
- * }</pre>
  *
  * @see ChangeDetector
  * @see OwnershipDetector
@@ -66,8 +49,6 @@ public final class PollingDetector implements ChangeDetector {
 
     /**
      * Creates a PollingDetector with default settings.
-     * <p>
-     * Uses a polling interval of 200ms.
      *
      * @return new PollingDetector with defaults
      */
@@ -122,7 +103,7 @@ public final class PollingDetector implements ChangeDetector {
     }
 
     /**
-     * Updates the last known hash after writing to clipboard.
+     * Updates the last known hash.
      *
      * @param hash new hash to remember
      */
@@ -176,10 +157,10 @@ public final class PollingDetector implements ChangeDetector {
         /**
          * Sets the polling interval.
          *
-         * @param interval polling interval (must be positive)
+         * @param interval polling interval
          * @return this builder
-         * @throws NullPointerException     if the interval is null
-         * @throws IllegalArgumentException if the interval is not positive
+         * @throws NullPointerException     if interval is null
+         * @throws IllegalArgumentException if interval is not positive
          */
         public Builder interval(Duration interval) {
             this.interval = interval;

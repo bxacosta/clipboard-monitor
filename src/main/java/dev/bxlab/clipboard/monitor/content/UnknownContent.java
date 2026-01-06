@@ -6,16 +6,7 @@ import java.time.Instant;
 import java.util.Objects;
 
 /**
- * Unknown or unsupported content from the clipboard.
- * <p>
- * Represents content that could not be classified as text, image, or files.
- * This typically happens when the clipboard contains a format not supported
- * by this library.
- *
- * <pre>{@code
- * UnknownContent content = new UnknownContent(hash, Instant.now());
- * System.out.println("Unknown content detected");
- * }</pre>
+ * Unknown or unsupported clipboard content.
  *
  * @param hash      SHA-256 hash of the content
  * @param timestamp when the content was captured
@@ -26,7 +17,7 @@ public record UnknownContent(
 ) implements ClipboardContent {
 
     /**
-     * Creates a new UnknownContent instance.
+     * Compact constructor with validation.
      *
      * @throws NullPointerException if hash or timestamp is null
      */

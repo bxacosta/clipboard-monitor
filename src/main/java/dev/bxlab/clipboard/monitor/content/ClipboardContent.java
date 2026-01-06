@@ -9,41 +9,8 @@ import java.util.Optional;
 /**
  * Immutable representation of clipboard content at a specific moment.
  * <p>
- * This is a sealed interface with four permitted implementations:
- * <ul>
- *   <li>{@link TextContent} - text content (plain text, HTML, RTF)</li>
- *   <li>{@link ImageContent} - image content (PNG, JPEG, BMP)</li>
- *   <li>{@link FilesContent} - list of files</li>
- *   <li>{@link UnknownContent} - unknown or unsupported content type</li>
- * </ul>
- * <p>
- * All implementations are records, ensuring immutability and thread-safety.
- *
- * <h2>Usage with Pattern Matching (Java 21)</h2>
- * <pre>{@code
- * ClipboardContent content = monitor.read();
- * switch (content) {
- *     case TextContent(var text, var hash, var ts) -> {
- *         System.out.println("Text: " + text);
- *     }
- *     case ImageContent(var img, _, _, var w, var h) -> {
- *         System.out.println("Image: " + w + "x" + h);
- *     }
- *     case FilesContent(var files, _, _, _) -> {
- *         files.forEach(f -> System.out.println("File: " + f));
- *     }
- *     case UnknownContent _ -> {
- *         System.out.println("Unknown content");
- *     }
- * }
- * }</pre>
- *
- * <h2>Usage with Convenience Methods</h2>
- * <pre>{@code
- * content.asText().ifPresent(text -> System.out.println("Text: " + text));
- * content.asImage().ifPresent(img -> processImage(img));
- * content.asFiles().ifPresent(files -> processFiles(files));
- * }</pre>
+ * Sealed interface with four implementations:
+ * {@link TextContent}, {@link ImageContent}, {@link FilesContent}, {@link UnknownContent}.
  *
  * @see TextContent
  * @see ImageContent
@@ -61,8 +28,6 @@ public sealed interface ClipboardContent permits TextContent, ImageContent, File
 
     /**
      * Returns the SHA-256 hash for content identification.
-     * <p>
-     * The hash is used for change detection and duplicate prevention.
      *
      * @return hexadecimal hash string
      */
@@ -77,11 +42,6 @@ public sealed interface ClipboardContent permits TextContent, ImageContent, File
 
     /**
      * Returns the content size in bytes.
-     * <p>
-     * For text, this is the UTF-8 encoded length.
-     * For images, this is width * height * 4 (ARGB).
-     * For files, this is the total size of all files.
-     * For unknown content, this is 0.
      *
      * @return size in bytes
      */

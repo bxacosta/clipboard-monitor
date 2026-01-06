@@ -54,32 +54,32 @@ public final class ClipboardAccessor {
         }
     }
 
-    /**
-     * Gets the current clipboard contents with automatic retry on busy.
-     *
-     * @return current transferable or null if the clipboard is empty
-     * @throws ClipboardUnavailableException if the clipboard cannot be accessed after retries
-     */
+/**
+ * Gets the current clipboard contents with automatic retry on busy.
+ *
+ * @return current transferable or null if empty
+ * @throws ClipboardUnavailableException if the clipboard cannot be accessed
+ */
     public static Transferable getContents() {
         return getContentsWithRetry(getClipboard());
     }
 
-    /**
-     * Reads the current clipboard content.
-     *
-     * @return clipboard content with hash already calculated
-     */
+/**
+ * Reads the current clipboard content.
+ *
+ * @return clipboard content
+ */
     public static ClipboardContent readContent() {
         Transferable transferable = getContents();
         return readContent(transferable);
     }
 
-    /**
-     * Reads clipboard content from a given Transferable.
-     *
-     * @param transferable the transferable to read from
-     * @return clipboard content with hash already calculated
-     */
+/**
+ * Reads clipboard content from a transferable.
+ *
+ * @param transferable the transferable to read from
+ * @return clipboard content
+ */
     public static ClipboardContent readContent(Transferable transferable) {
         Instant now = Instant.now();
 

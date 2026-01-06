@@ -8,15 +8,9 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * A list of files from the clipboard.
+ * File list content from the clipboard.
  *
- * <pre>{@code
- * FilesContent content = new FilesContent(files, hash, Instant.now(), totalSize);
- * System.out.println("Files: " + content.files().size());
- * content.files().forEach(f -> System.out.println("  - " + f.getName()));
- * }</pre>
- *
- * @param files     the list of files (never null, immutable copy)
+ * @param files     the list of files
  * @param hash      SHA-256 hash of the content
  * @param timestamp when the content was captured
  * @param totalSize the total size of all files in bytes
@@ -29,7 +23,7 @@ public record FilesContent(
 ) implements ClipboardContent {
 
     /**
-     * Creates a new FilesContent instance.
+     * Compact constructor with validation.
      *
      * @throws NullPointerException     if files, hash, or timestamp is null
      * @throws IllegalArgumentException if totalSize is negative
@@ -45,7 +39,7 @@ public record FilesContent(
     }
 
     /**
-     * Creates a new FilesContent instance, calculating the total size from files.
+     * Creates FilesContent calculating the total size from files.
      *
      * @param files     the list of files
      * @param hash      SHA-256 hash of the content

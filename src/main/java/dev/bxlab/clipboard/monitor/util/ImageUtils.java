@@ -22,7 +22,6 @@ public final class ImageUtils {
 
     /**
      * Converts an Image to BufferedImage.
-     * If the image is already a BufferedImage, returns it directly.
      *
      * @param img image to convert
      * @return BufferedImage representation
