@@ -2,7 +2,7 @@
 
 [![Java](https://img.shields.io/badge/Java-21%2B-orange)](https://openjdk.org/)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.0-green)]()
+[![Version](https://img.shields.io/github/v/tag/bxacosta/clipboard-monitor?label=version&color=green)](https://github.com/bxacosta/clipboard-monitor/tags)
 
 Java library for monitoring system clipboard changes in real-time. Provides reliable detection of clipboard
 modifications and supports text, images, and file lists.

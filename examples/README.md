@@ -30,9 +30,4 @@ All examples are executed via Gradle tasks from the project root directory.
 ./gradlew -q --console=plain :examples:interactive:run
 ```
 
-## Requirements
-
-- Java 17 or higher
-- Gradle 9.x
-
 For detailed information about each example, refer to the README file in the respective module directory.
